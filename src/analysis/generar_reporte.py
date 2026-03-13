@@ -3,7 +3,8 @@ import pandas as pd
 import os
 
 # --- CONFIGURACIÓN ---
-DB_PATH = "data/db/local_tracking.db"
+from config import config
+DB_PATH = config.LOCAL_DB_PATH
 OUTPUT_FILE = "Reporte_Eficiencia_Final.xlsx"
 
 def generar_reporte_pro():

@@ -5,7 +5,10 @@ import pandas as pd
 import numpy as np
 
 class EfficiencyCalculator:
-    def __init__(self, db_path="data/db/local_tracking.db"):
+    def __init__(self, db_path=None):
+        if db_path is None:
+            from config import config
+            db_path = config.LOCAL_DB_PATH
         self.db_path = db_path
 
     def load_data(self):

@@ -36,6 +36,11 @@ class ReportGenerator:
             plt.savefig(save_path)
         plt.show()
 
-    def export_to_excel(self, file_path="data/reporting/eficiencia.xlsx"):
+    def export_to_excel(self, file_path=None):
+        if file_path is None:
+            from config import config
+            import os
+            file_path = os.path.join(config.REPORTS_DIR, "eficiencia.xlsx")
+            os.makedirs(config.REPORTS_DIR, exist_ok=True)
         self.df.to_excel(file_path, index=False)
         print(f"Reporte exportado a: {file_path}")

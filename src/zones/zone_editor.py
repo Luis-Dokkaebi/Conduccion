@@ -3,7 +3,10 @@ import os
 import json
 
 class ZoneEditor:
-    def __init__(self, output_path="data/zonas/zonas.json"):
+    def __init__(self, output_path=None):
+        if output_path is None:
+            from config import config
+            output_path = config.ZONAS_PATH
         # Determina la raíz del proyecto a partir de la ubicación del archivo actual
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.project_root = os.path.abspath(os.path.join(script_dir, "../.."))
@@ -66,4 +69,7 @@ class ZoneEditor:
 # 💖 Bloque de ejecución directa
 if __name__ == "__main__":
     editor = ZoneEditor()
-    editor.run("data/zonas/frame_referencia.jpg", "Zona")
+    from config import config
+    import os
+    frame_path = os.path.join(os.path.dirname(config.ZONAS_PATH), 'frame_referencia.jpg')
+    editor.run(frame_path, 'Zona')

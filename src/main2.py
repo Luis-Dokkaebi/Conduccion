@@ -13,7 +13,7 @@ def main():
     # Crea el detector con ruta al modelo y zonas
     detector = PeopleDetector(
         source=source,
-        zonas_path="data/zonas/zonas.json",
+        zonas_path=None,
         model_path="yolov8n.pt"  # Se descarga automáticamente si no lo tienes
     )
 

@@ -67,15 +67,15 @@ def start_video_stream():
         return
 
     # Ensure all data directories exist before loading
-    os.makedirs('data/zonas', exist_ok=True)
-    if not os.path.exists('data/zonas/zonas.json'):
-        with open('data/zonas/zonas.json', 'w') as f:
+    os.makedirs(os.path.dirname(config.ZONAS_PATH), exist_ok=True)
+    if not os.path.exists(config.ZONAS_PATH):
+        with open(config.ZONAS_PATH, 'w') as f:
             f.write('{}')
 
     # Inicializamos los módulos
     detector = PersonDetector(confidence_threshold=config.CONFIDENCE_THRESHOLD)
     tracker = PersonTracker()
-    zone_checker = ZoneChecker(zones_path="data/zonas/zonas.json")
+    zone_checker = ZoneChecker(zones_path=config.ZONAS_PATH)
     db_manager = DatabaseManager(db_path=config.LOCAL_DB_PATH)
     
     # Initialize face recognizer
@@ -91,7 +91,7 @@ def start_video_stream():
     track_id_to_name = {}
 
     # Ensure snapshots dir exists
-    snapshots_dir = getattr(config, 'SNAPSHOTS_DIR', 'data/snapshots')
+    snapshots_dir = getattr(config, 'SNAPSHOTS_DIR', config.SNAPSHOTS_DIR)
     os.makedirs(snapshots_dir, exist_ok=True)
 
     print("✅ Sistema iniciado. Presiona 'q' para salir.")

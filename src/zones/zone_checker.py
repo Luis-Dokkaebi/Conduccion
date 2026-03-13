@@ -5,7 +5,10 @@ import os
 from shapely.geometry import Point, Polygon
 
 class ZoneChecker:
-    def __init__(self, zones_path="data/zonas/zonas.json"):
+    def __init__(self, zones_path=None):
+        if zones_path is None:
+            from config import config
+            zones_path = config.ZONAS_PATH
         self.zones = {}
         try:
             with open(zones_path, 'r') as f:

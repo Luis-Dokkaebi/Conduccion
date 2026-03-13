@@ -11,7 +11,12 @@ except ImportError:
     face_recognition = None
 
 class FaceRecognizer:
-    def __init__(self, faces_dir="data/faces", encodings_file="data/faces/encodings.pkl"):
+    def __init__(self, faces_dir=None, encodings_file=None):
+        from config import config
+        if faces_dir is None:
+            faces_dir = config.FACES_DIR
+        if encodings_file is None:
+            encodings_file = config.ENCODINGS_FILE
         self.faces_dir = faces_dir
         self.encodings_file = encodings_file
         self.known_face_encodings = []

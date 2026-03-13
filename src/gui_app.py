@@ -35,7 +35,8 @@ class SystemGUI:
         self.root.rowconfigure(1, weight=1)
 
         # Configs
-        self.faces_dir = "data/faces"
+        from config import config
+        self.faces_dir = config.FACES_DIR
         os.makedirs(self.faces_dir, exist_ok=True)
         self.face_recognizer = FaceRecognizer(faces_dir=self.faces_dir)
 
@@ -144,7 +145,7 @@ class SystemGUI:
         # Save temp image outside the person dir to avoid shutil.copy "SameFileError"
         import time
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        temp_path = os.path.join("data", f"temp_captura_{timestamp}.jpg")
+        temp_path = os.path.join(os.path.dirname(self.faces_dir), f"temp_captura_{timestamp}.jpg")
         cv2.imwrite(temp_path, self.current_frame)
         
         # Register using existing logic
