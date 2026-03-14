@@ -3,7 +3,8 @@ import pandas as pd
 import os
 
 # --- CONFIGURACIÓN ---
-DB_PATH = "data/db/local_tracking.db"
+data_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'OficinaEficiencia', 'data')
+DB_PATH = os.path.join(data_dir, 'db', 'local_tracking.db')
 OUTPUT_FILE = "Reporte_Eficiencia_Final.xlsx"
 
 def generar_reporte_pro():

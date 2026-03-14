@@ -5,8 +5,12 @@ import os
 from datetime import datetime
 
 class DatabaseManager:
-    def __init__(self, db_path="data/db/local_tracking.db"):
-        self.db_path = db_path
+    def __init__(self, db_path=None):
+        if db_path is None:
+            data_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'OficinaEficiencia', 'data')
+            self.db_path = os.path.join(data_dir, 'db', 'local_tracking.db')
+        else:
+            self.db_path = db_path
         self._create_table()
 
     def _create_table(self):
@@ -42,6 +46,14 @@ class DatabaseManager:
                         employee_name TEXT,
                         timestamp TEXT,
                         state TEXT
+                    )''')
+
+        c.execute('''CREATE TABLE IF NOT EXISTS employees (
+                        employee_name TEXT PRIMARY KEY,
+                        department TEXT,
+                        position TEXT,
+                        shift TEXT,
+                        registration_date TEXT
                     )''')
         
         # Check for employee_name column in snapshots
@@ -115,5 +127,238 @@ class DatabaseManager:
             c.execute("INSERT INTO daily_attendance (employee_name, date, arrival_time, departure_time) VALUES (?, ?, ?, ?)",
                       (employee_name, date_str, time_str, time_str))
         
+        conn.commit()
+        conn.close()
+
+    def employee_exists(self, name):
+        """Verifica si un empleado ya existe (case-insensitive)."""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("SELECT 1 FROM employees WHERE LOWER(employee_name) = LOWER(?)", (name,))
+        exists = c.fetchone() is not None
+        conn.close()
+        return exists
+
+    def save_employee_profile(self, name, department='', position='', shift=''):
+        """Guarda o actualiza el perfil organizacional del empleado."""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("""INSERT OR REPLACE INTO employees (employee_name, department, position, shift, registration_date)
+                     VALUES (?, ?, ?, ?, ?)""",
+                  (name, department, position, shift, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+
+    def get_all_employee_names(self):
+        """Devuelve los nombres de la tabla employees."""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("SELECT employee_name FROM employees ORDER BY employee_name ASC")
+        rows = c.fetchall()
+        conn.close()
+        return [row[0] for row in rows]
+
+    def get_unique_employees(self):
+        """Devuelve una lista de nombres de empleados únicos registrados."""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("SELECT DISTINCT employee_name FROM daily_attendance WHERE employee_name IS NOT NULL AND employee_name != ''")
+        rows = c.fetchall()
+        conn.close()
+        return [row[0] for row in rows]
+
+    def get_attendance_report(self, start_date, end_date, employee_name_filter=None):
+        """
+        Obtiene el reporte de asistencia por rango de fechas y filtro opcional de empleado.
+        Retorna: Lista de tuplas (empleado, fecha, hora_llegada, hora_salida, horas_totales_str)
+        """
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        
+        query = '''
+            SELECT employee_name, date, arrival_time, departure_time 
+            FROM daily_attendance 
+            WHERE date BETWEEN ? AND ? 
+        '''
+        params = [start_date, end_date]
+        
+        if employee_name_filter and employee_name_filter != "Todos":
+            query += " AND employee_name = ?"
+            params.append(employee_name_filter)
+            
+        query += " ORDER BY date DESC, employee_name ASC"
+        
+        c.execute(query, params)
+        rows = c.fetchall()
+        conn.close()
+        
+        # Procesamiento para calcular horas totales
+        report_data = []
+        for row in rows:
+            emp_name, date_str, arrival, departure = row
+            total_hours_str = "0.00"
+            if arrival and departure:
+                try:
+                    fmt = "%H:%M:%S"
+                    t1 = datetime.strptime(arrival, fmt)
+                    t2 = datetime.strptime(departure, fmt)
+                    delta = t2 - t1
+                    total_seconds = delta.total_seconds()
+                    # Si salió al día siguiente (turno de noche)
+                    if total_seconds < 0:
+                        total_seconds += 24 * 3600
+                    hours = total_seconds / 3600
+                    total_hours_str = f"{hours:.2f}"
+                except ValueError:
+                    pass
+            report_data.append((emp_name, date_str, arrival, departure, total_hours_str))
+            
+        return report_data
+
+    def get_efficiency_report(self, start_date, end_date, employee_name_filter=None):
+        """
+        Obtiene el reporte de eficiencia calculando tiempos efectivos e inactivos.
+        Retorna: Lista de tuplas (empleado, fecha, tiempo_total_str, tiempo_activo_str, eficiencia_str)
+        """
+        conn = sqlite3.connect(self.db_path)
+        # Queremos obtener la fecha separada del timestamp
+        query = '''
+            SELECT employee_name, date(timestamp) as r_date, timestamp, inside_zone 
+            FROM tracking 
+            WHERE date(timestamp) BETWEEN ? AND ? 
+            AND employee_name IS NOT NULL AND employee_name != ''
+        '''
+        params = [start_date, end_date]
+        
+        if employee_name_filter and employee_name_filter != "Todos":
+            query += " AND employee_name = ?"
+            params.append(employee_name_filter)
+            
+        query += " ORDER BY employee_name ASC, timestamp ASC"
+        
+        # Leemos con con fila de diccionarios para mayor claridad
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute(query, params)
+        rows = c.fetchall()
+        conn.close()
+        
+        # Agrupamos por empleado y día
+        # key: (employee_name, date_str) -> value: list of records [(timestamp_datetime, inside_zone), ...]
+        daily_records = {}
+        for row in rows:
+            emp_name = row['employee_name']
+            r_date = row['r_date']
+            ts_str = row['timestamp']
+            inside = row['inside_zone']
+            
+            try:
+                # ISO Format from datetime.now().isoformat()
+                ts_dt = datetime.fromisoformat(ts_str)
+            except ValueError:
+                continue
+                
+            key = (emp_name, r_date)
+            if key not in daily_records:
+                daily_records[key] = []
+            daily_records[key].append((ts_dt, inside))
+            
+        report_data = []
+        
+        # Procesar tiempos por día y empleado
+        for (emp_name, d_date), records in daily_records.items():
+            if not records:
+                continue
+                
+            active_time_sec = 0.0
+            inactive_time_sec = 0.0
+            
+            # Asumimos que están ordenados por timestamp
+            for i in range(len(records) - 1):
+                current_dt, current_inside = records[i]
+                next_dt, _ = records[i+1]
+                
+                delta = (next_dt - current_dt).total_seconds()
+                
+                # Ignorar saltos locos (ej. si la cámara se apaga 5 horas, no lo contamos como tiempo seguido)
+                # Un umbral lógico por "tracking continuo" sería p.ej. 5 minutos
+                if delta > 300: 
+                    continue
+                    
+                if current_inside == 1:
+                    active_time_sec += delta
+                else:
+                    inactive_time_sec += delta
+                    
+            total_sec = active_time_sec + inactive_time_sec
+            efficiency_pct = 0.0
+            if total_sec > 0:
+                efficiency_pct = (active_time_sec / total_sec) * 100
+                
+            # Formatear salidas
+            def format_time(seconds):
+                hours = int(seconds // 3600)
+                minutes = int((seconds % 3600) // 60)
+                return f"{hours}h {minutes}m"
+                
+            total_str = format_time(total_sec)
+            active_str = format_time(active_time_sec)
+            eff_str = f"{efficiency_pct:.1f}%"
+            
+            # Solo mostrar si hay tiempo registrado
+            if total_sec > 0:
+                report_data.append((emp_name, d_date, total_str, active_str, eff_str))
+                
+        # Ordenar por fecha desc, nombre asc
+        report_data.sort(key=lambda x: (x[1], x[0]), reverse=True)
+        return report_data
+
+    def get_employee_snapshots(self, employee_name, date_str):
+        """
+        Devuelve las rutas de snapshots para un empleado en una fecha específica.
+        """
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("""
+            SELECT snapshot_path FROM snapshots
+            WHERE employee_name = ? AND date(timestamp) = ?
+            ORDER BY timestamp ASC
+        """, (employee_name, date_str))
+        rows = c.fetchall()
+        conn.close()
+        return [row[0] for row in rows if row[0]]
+
+    def anonymize_employee(self, employee_name):
+        """
+        Reemplaza el nombre del empleado por un seudónimo anónimo en todas las tablas
+        para preservar las métricas pero eliminar los datos personales (Derecho al olvido).
+        """
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        
+        # Generar un hash corto o ID anónimo basado en el nombre y el tiempo
+        import hashlib
+        import time
+        raw = f"{employee_name}_{time.time()}".encode('utf-8')
+        anon_id = f"empleado_eliminado_{hashlib.md5(raw).hexdigest()[:8]}"
+        
+        tables_to_update = ['tracking', 'snapshots', 'daily_attendance', 'workday_states']
+        
+        for table in tables_to_update:
+            try:
+                c.execute(f"UPDATE {table} SET employee_name = ? WHERE employee_name = ?", (anon_id, employee_name))
+            except sqlite3.OperationalError:
+                pass # Ignorar si la tabla o columna no existe en versiones antiguas
+                
+        conn.commit()
+        conn.close()
+        
+        return anon_id
+
+    def delete_employee_profile(self, employee_name):
+        """Elimina el registro del empleado de la tabla employees para permitir re-registro."""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("DELETE FROM employees WHERE employee_name = ?", (employee_name,))
         conn.commit()
         conn.close()

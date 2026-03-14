@@ -6,3 +6,6 @@ pandas
 numpy
 plotly
 face_recognition
+tkcalendar
+matplotlib
+reportlab

@@ -1,13 +1,24 @@
 import cv2
 import os
+import sys
 import json
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+try:
+    from config.config import ZONAS_FILE as _DEFAULT_ZONAS
+except ImportError:
+    _DEFAULT_ZONAS = "data/zonas/zonas.json"
+
 class ZoneEditor:
-    def __init__(self, output_path="data/zonas/zonas.json"):
-        # Determina la raíz del proyecto a partir de la ubicación del archivo actual
+    def __init__(self, output_path=None):
+        if output_path is None:
+            self.output_path = _DEFAULT_ZONAS
+        else:
+            self.output_path = output_path
+        # Determina la raíz del proyecto (used only for loading reference images)
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.project_root = os.path.abspath(os.path.join(script_dir, "../.."))
-        self.output_path = os.path.join(self.project_root, output_path)
         self.points = []
 
     def click_event(self, event, x, y, flags, param):

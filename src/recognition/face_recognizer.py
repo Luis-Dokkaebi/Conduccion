@@ -11,9 +11,17 @@ except ImportError:
     face_recognition = None
 
 class FaceRecognizer:
-    def __init__(self, faces_dir="data/faces", encodings_file="data/faces/encodings.pkl"):
-        self.faces_dir = faces_dir
-        self.encodings_file = encodings_file
+    def __init__(self, faces_dir=None, encodings_file=None):
+        if faces_dir is None:
+            data_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'OficinaEficiencia', 'data')
+            self.faces_dir = os.path.join(data_dir, 'faces')
+        else:
+            self.faces_dir = faces_dir
+            
+        if encodings_file is None:
+            self.encodings_file = os.path.join(self.faces_dir, 'encodings.pkl')
+        else:
+            self.encodings_file = encodings_file
         self.known_face_encodings = []
         self.known_face_names = []
         
@@ -165,4 +173,71 @@ class FaceRecognizer:
         # Update cache
         self.save_encodings()
         print(f"Registered {name} successfully.")
+        return True
+
+    def register_face_burst(self, image_paths, name):
+        """Registers a face from multiple burst images. Returns number of successful registrations."""
+        if face_recognition is None:
+            print("Face recognition module not available.")
+            return 0
+
+        person_dir = os.path.join(self.faces_dir, name)
+        os.makedirs(person_dir, exist_ok=True)
+        
+        success_count = 0
+        for idx, image_path in enumerate(image_paths):
+            if not os.path.exists(image_path):
+                continue
+            try:
+                image = face_recognition.load_image_file(image_path)
+                encodings = face_recognition.face_encodings(image)
+                
+                if not encodings:
+                    print(f"No face found in burst image {idx}")
+                    continue
+                
+                encoding = encodings[0]
+                
+                # Save image to person directory
+                dest_path = os.path.join(person_dir, f"burst_{idx}.jpg")
+                shutil.copy(image_path, dest_path)
+                
+                # Update memory
+                self.known_face_encodings.append(encoding)
+                self.known_face_names.append(name)
+                success_count += 1
+            except Exception as e:
+                print(f"Error processing burst image {idx}: {e}")
+        
+        if success_count > 0:
+            self.save_encodings()
+            print(f"Registered {name} with {success_count} burst images.")
+        
+        return success_count
+
+    def delete_face(self, name):
+        """Removes a face from memory and disk."""
+        if name not in self.known_face_names:
+            print(f"Employee {name} not found in memory.")
+            return False
+
+        # Remove from memory (handle multiple encodings if they exist)
+        indexes_to_delete = [i for i, n in enumerate(self.known_face_names) if n == name]
+        for index in sorted(indexes_to_delete, reverse=True):
+            del self.known_face_names[index]
+            del self.known_face_encodings[index]
+
+        # Update cache
+        self.save_encodings()
+
+        # Remove physical directory
+        person_dir = os.path.join(self.faces_dir, name)
+        if os.path.exists(person_dir):
+            try:
+                shutil.rmtree(person_dir)
+                print(f"Physical directory deleted: {person_dir}")
+            except Exception as e:
+                print(f"Error deleting physical directory: {e}")
+        
+        print(f"Deleted {name} successfully.")
         return True

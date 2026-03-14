@@ -1,12 +1,17 @@
 # src/analysis/efficiency_calculator.py
 
+import os
 import sqlite3
 import pandas as pd
 import numpy as np
 
 class EfficiencyCalculator:
-    def __init__(self, db_path="data/db/local_tracking.db"):
-        self.db_path = db_path
+    def __init__(self, db_path=None):
+        if db_path is None:
+            data_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'OficinaEficiencia', 'data')
+            self.db_path = os.path.join(data_dir, 'db', 'local_tracking.db')
+        else:
+            self.db_path = db_path
 
     def load_data(self):
         conn = sqlite3.connect(self.db_path)

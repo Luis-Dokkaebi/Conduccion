@@ -37,29 +37,34 @@ def start_video_stream():
     else:
         video_source = config.REMOTE_CAMERA_URL
 
-    sources_to_try = [video_source, 1, 0, 2, 3] # Búsqueda de cámaras (fallback) dando prioridad a externas (1)
+    # Use the camera index selected by the user in the GUI (passed via env var), otherwise fallback
+    selected_cam = os.environ.get('SELECTED_CAMERA_INDEX')
+    if selected_cam is not None:
+        sources_to_try = [int(selected_cam)]
+    else:
+        sources_to_try = [video_source, 0, 1, 2, 3]
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_sources = []
+    for s in sources_to_try:
+        if s not in seen:
+            seen.add(s)
+            unique_sources.append(s)
+    sources_to_try = unique_sources
+    
     cap = None
-    import numpy as np
     
     for src in sources_to_try:
         temp_cap = cv2.VideoCapture(src)
         if temp_cap.isOpened():
-            valid_camera = False
-            for _ in range(5):
-                ret, frame = temp_cap.read()
-                if ret:
-                    std_dev = np.std(frame)
-                    if std_dev > 10.0:
-                        valid_camera = True
-                        break
-            
-            if valid_camera:
-                print(f"✅ Cámara REAL iniciada con éxito en el índice/ruta: {src} (std={std_dev:.2f})")
+            ret, frame = temp_cap.read()
+            if ret:
+                print(f"✅ Cámara iniciada con éxito en el índice/ruta: {src}")
                 cap = temp_cap
                 break
             else:
-                print(f"⚠️ Cámara en origen {src} parece virtual o inactiva. Omitiendo...")
-                
+                print(f"⚠️ Cámara en origen {src} no devolvió frame. Omitiendo...")
         temp_cap.release()
 
     if not cap or not cap.isOpened():
@@ -67,15 +72,17 @@ def start_video_stream():
         return
 
     # Ensure all data directories exist before loading
-    os.makedirs('data/zonas', exist_ok=True)
-    if not os.path.exists('data/zonas/zonas.json'):
-        with open('data/zonas/zonas.json', 'w') as f:
+    zonas_file = getattr(config, 'ZONAS_FILE', os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'OficinaEficiencia', 'data', 'zonas', 'zonas.json'))
+    os.makedirs(os.path.dirname(zonas_file), exist_ok=True)
+    if not os.path.exists(zonas_file):
+        with open(zonas_file, 'w') as f:
             f.write('{}')
 
     # Inicializamos los módulos
-    detector = PersonDetector(confidence_threshold=config.CONFIDENCE_THRESHOLD)
+    model_path = getattr(config, 'MODEL_PATH', 'yolov8n.pt')
+    detector = PersonDetector(model_path=model_path, confidence_threshold=config.CONFIDENCE_THRESHOLD)
     tracker = PersonTracker()
-    zone_checker = ZoneChecker(zones_path="data/zonas/zonas.json")
+    zone_checker = ZoneChecker(zones_path=zonas_file)
     db_manager = DatabaseManager(db_path=config.LOCAL_DB_PATH)
     
     # Initialize face recognizer
@@ -91,7 +98,7 @@ def start_video_stream():
     track_id_to_name = {}
 
     # Ensure snapshots dir exists
-    snapshots_dir = getattr(config, 'SNAPSHOTS_DIR', 'data/snapshots')
+    snapshots_dir = getattr(config, 'SNAPSHOTS_DIR', os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'OficinaEficiencia', 'data', 'snapshots'))
     os.makedirs(snapshots_dir, exist_ok=True)
 
     print("✅ Sistema iniciado. Presiona 'q' para salir.")

@@ -17,7 +17,7 @@ except ImportError:
 
 def generar_reporte():
     # Calculamos eficiencia
-    calculator = EfficiencyCalculator(db_path="data/db/local_tracking.db")
+    calculator = EfficiencyCalculator()
     results_df = calculator.calculate_efficiency()
 
     if results_df is not None:

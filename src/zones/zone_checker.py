@@ -2,10 +2,20 @@
 
 import json
 import os
+import sys
 from shapely.geometry import Point, Polygon
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+try:
+    from config.config import ZONAS_FILE as _DEFAULT_ZONES
+except ImportError:
+    _DEFAULT_ZONES = "data/zonas/zonas.json"
+
 class ZoneChecker:
-    def __init__(self, zones_path="data/zonas/zonas.json"):
+    def __init__(self, zones_path=None):
+        if zones_path is None:
+            zones_path = _DEFAULT_ZONES
         self.zones = {}
         try:
             with open(zones_path, 'r') as f:
