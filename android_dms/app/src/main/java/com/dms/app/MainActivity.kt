@@ -208,8 +208,12 @@ class MainActivity : AppCompatActivity() {
         .setConstraints(constraints)
         .build()
 
-        WorkManager.getInstance(this).enqueue(syncWorkRequest)
-        Log.i(TAG, "Enqueued periodic telemetry sync worker.")
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "TelemetrySyncWorker",
+            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            syncWorkRequest
+        )
+        Log.i(TAG, "Enqueued unique periodic telemetry sync worker.")
     }
 
     // Task 5.1.3: Dimming mode touch logic

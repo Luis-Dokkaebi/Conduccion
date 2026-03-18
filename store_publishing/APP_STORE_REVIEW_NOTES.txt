@@ -1,0 +1,36 @@
+# App Store & Google Play Review Notes
+
+Dear Review Team,
+
+This application is a specialized Driver Monitoring System (DMS) designed for fleet managers, truck drivers, and logistics companies to prevent fatal traffic accidents caused by microsleeps and severe driver distraction.
+
+## Core Functionality and Hardware Usage
+
+The primary function of this application relies on utilizing the front-facing camera of the device mounted on the vehicle's dashboard while driving.
+
+### 1. Camera Usage (`NSCameraUsageDescription` / `android.permission.CAMERA` / `android.permission.FOREGROUND_SERVICE_CAMERA`)
+**Why we need the camera:** The application uses Google's MediaPipe Face Mesh (a lightweight, local, on-device Edge AI model) to analyze the driver's face in real-time. It mathematically calculates the Eye Aspect Ratio (EAR) and Mouth Aspect Ratio (MAR) to determine if the driver's eyes are closed (microsleeping) or if they are constantly yawning. It also calculates Head Pose (Pitch, Yaw, Roll) to determine if the driver is looking at their phone or away from the road for too long.
+
+**Privacy and Security:**
+- **Zero Video Transmission:** We strongly emphasize that **no video or images of the driver are ever transmitted to the cloud or saved as files on the device.** All processing happens locally in RAM at 30 FPS, and the video frames are discarded immediately after the mathematical coordinates (landmarks) are extracted.
+- Only numeric telemetry (the driver's fatigue score and timestamp of incidents) is synchronized with the fleet manager's backend.
+
+### 2. Audio/Siren and Device Control (`AVAudioSessionCategoryPlayback` / `AudioManager` / `Vibrator`)
+If the application detects a critical microsleep (eyes closed for more than 1.5 seconds), the application's sole purpose is to save the driver's life by waking them up immediately.
+- The app will use audio APIs to bypass the "Do Not Disturb" mode or duck other playing media (like Spotify) to play a loud alarm siren at maximum volume.
+- The app will force the screen to maximum brightness and display a red strobe flash.
+- The app will utilize the device's haptic engine to vibrate continuously.
+
+### 3. Background/Foreground Execution (`UIBackgroundModes` / `android.permission.FOREGROUND_SERVICE`)
+The app is expected to run as a foreground activity or via Picture-in-Picture (PiP) while the driver is using other navigation apps (like Google Maps or Waze). This ensures the camera is never killed by the OS, as continuous monitoring is critical for safety.
+
+## Demonstration Video
+Because this application requires a person to mimic falling asleep or acting distracted in front of the camera to trigger the alarms and logic, we have provided a full demonstration video showing the app in action:
+
+**Link to Demo Video:** [INSERT_YOUTUBE_OR_VIMEO_LINK_HERE]
+**Password (If applicable):** [INSERT_PASSWORD_HERE]
+
+Thank you for your time and for reviewing our application. If you have any further questions regarding privacy or camera usage, please don't hesitate to contact us.
+
+Best regards,
+The Development Team
