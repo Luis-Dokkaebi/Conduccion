@@ -30,6 +30,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraExecutor: ExecutorService
     private var faceLandmarker: FaceLandmarker? = null
 
+    // Task 3.1: FSM para detección de somnolencia
+    private val drowsinessDetector = DrowsinessDetector()
+
     companion object {
         private const val TAG = "DMS_CameraX"
         private const val REQUEST_CODE_PERMISSIONS = 10
@@ -169,6 +172,15 @@ class MainActivity : AppCompatActivity() {
             val (yaw, pitch) = DrowsinessMath.calculateHeadPose(landmarks)
 
             Log.d(TAG, "Metrics -> EAR: $avgEar (L: $leftEar, R: $rightEar), MAR: $mar, HeadPose(Yaw,Pitch): ($yaw, $pitch)")
+
+            // Task 3.1: Actualizar máquina de estados de somnolencia con el EAR
+            val state = drowsinessDetector.processEar(avgEar, SystemClock.uptimeMillis())
+            Log.d(TAG, "Drowsiness State: $state")
+            if (drowsinessDetector.isCurrentlyCalibrating()) {
+                Log.d(TAG, "Calibrating baseline EAR...")
+            } else {
+                Log.d(TAG, "Baseline EAR: ${drowsinessDetector.getBaselineEar()}")
+            }
         }
     }
 
