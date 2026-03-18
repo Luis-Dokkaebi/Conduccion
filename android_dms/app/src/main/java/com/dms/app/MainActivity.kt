@@ -37,6 +37,9 @@ import androidx.work.WorkManager
 import androidx.work.NetworkType
 import androidx.work.Constraints
 import java.util.concurrent.TimeUnit
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
 
 class MainActivity : AppCompatActivity() {
 
@@ -60,6 +63,34 @@ class MainActivity : AppCompatActivity() {
     // Task 6.1: Almacenamiento Local (Store and Forward)
     private var sleepStartTimeMs: Long = 0L
     private var lastRecordedEar: Float = 0f
+
+    // Task 8.2: Receptor de actualizaciones de clearance
+    private val clearanceReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == TelemetrySyncWorker.ACTION_CLEARANCE_UPDATE) {
+                val status = intent.getStringExtra("status")
+                val frsScore = intent.getFloatExtra("frs_score", 0f)
+                val message = intent.getStringExtra("message")
+                val restMinutes = intent.getIntExtra("mandatory_rest_minutes", 0)
+
+                if (status == "BLOCKED_FATIGUE") {
+                    Log.w(TAG, "Driver blocked due to fatigue. Launching ClearanceActivity.")
+                    val clearanceIntent = Intent(this@MainActivity, ClearanceActivity::class.java).apply {
+                        putExtra("status", status)
+                        putExtra("frs_score", frsScore)
+                        putExtra("message", message)
+                        putExtra("mandatory_rest_minutes", restMinutes)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    }
+                    startActivity(clearanceIntent)
+                    finish() // Close main monitoring activity
+                } else if (status == "WARNING") {
+                    Log.w(TAG, "Driver warning: $message")
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
 
     companion object {
         private const val TAG = "DMS_CameraX"
@@ -181,12 +212,16 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        LocalBroadcastManager.getInstance(this).registerReceiver(
+            clearanceReceiver, IntentFilter(TelemetrySyncWorker.ACTION_CLEARANCE_UPDATE)
+        )
     }
 
     override fun onPause() {
         super.onPause()
         alertManager.stopAlarm(redFlashOverlay)
         unregisterReceiver(batteryReceiver)
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(clearanceReceiver)
     }
 
     override fun onDestroy() {
@@ -194,6 +229,30 @@ class MainActivity : AppCompatActivity() {
         alertManager.stopAlarm(redFlashOverlay)
         cameraExecutor.shutdown()
         faceLandmarker?.close()
+
+        // Task 8.3: Terminar turno e invocar la generación del reporte PDF
+        endShiftAndGenerateReport()
+    }
+
+    private fun endShiftAndGenerateReport() {
+        Log.i(TAG, "Ending shift and requesting PDF report from backend...")
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val retrofit = Retrofit.Builder()
+                    .baseUrl("http://10.0.2.2:8000") // Same URL as TelemetrySyncWorker
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .build()
+                val dmsApi = retrofit.create(DmsApi::class.java)
+                val response = dmsApi.endShift("driver_123")
+                if (response.isSuccessful) {
+                    Log.i(TAG, "Successfully triggered end_shift API.")
+                } else {
+                    Log.e(TAG, "Failed to trigger end_shift API. Status: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception calling end_shift API", e)
+            }
+        }
     }
 
     // Task 6.2.2: Crear un servicio de WorkManager que corra cada 15 min

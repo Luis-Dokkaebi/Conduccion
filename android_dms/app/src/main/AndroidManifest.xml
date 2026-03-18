@@ -25,5 +25,7 @@
                 <category android:name="android.intent.action.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity android:name=".ClearanceActivity" />
     </application>
 </manifest>

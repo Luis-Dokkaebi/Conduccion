@@ -1,7 +1,9 @@
 package com.dms.app
 
 import android.content.Context
+import android.content.Intent
 import android.util.Log
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import retrofit2.Retrofit
@@ -16,6 +18,7 @@ class TelemetrySyncWorker(
         private const val TAG = "TelemetrySyncWorker"
         // In a real app, this would be your production backend URL
         private const val BASE_URL = "http://10.0.2.2:8000"
+        const val ACTION_CLEARANCE_UPDATE = "com.dms.app.ACTION_CLEARANCE_UPDATE"
     }
 
     override suspend fun doWork(): Result {
@@ -47,6 +50,27 @@ class TelemetrySyncWorker(
                 val idsToDelete = unsyncedEvents.map { it.id }
                 eventDao.deleteEvents(idsToDelete)
                 Log.i(TAG, "Successfully synced and purged ${idsToDelete.size} events.")
+
+                // Task 8.2: Consultar estado del conductor (Clearance) después de sincronizar
+                val driverId = "driver_123" // Same default used in MicroSleepEvent
+                val clearanceResponse = dmsApi.getClearance(driverId)
+
+                if (clearanceResponse.isSuccessful && clearanceResponse.body() != null) {
+                    val clearance = clearanceResponse.body()!!
+                    Log.i(TAG, "Received clearance status: ${clearance.status} (FRS: ${clearance.frs_score})")
+
+                    // Notificar a MainActivity usando LocalBroadcastManager
+                    val intent = Intent(ACTION_CLEARANCE_UPDATE).apply {
+                        putExtra("status", clearance.status)
+                        putExtra("frs_score", clearance.frs_score)
+                        putExtra("message", clearance.message)
+                        putExtra("mandatory_rest_minutes", clearance.mandatory_rest_minutes)
+                    }
+                    LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(intent)
+                } else {
+                    Log.w(TAG, "Failed to get clearance status: ${clearanceResponse.code()}")
+                }
+
                 Result.success()
             } else {
                 Log.e(TAG, "Sync failed with server error: ${response.code()}")
