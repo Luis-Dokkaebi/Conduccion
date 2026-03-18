@@ -10,7 +10,20 @@ class CameraViewController: UIViewController, AVCaptureVideoDataOutputSampleBuff
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupAudioSession()
         setupCamera()
+    }
+
+    // Task 4.1.3: [Audio iOS] Configurar AVAudioSession con categoría playback y duckOthers
+    private func setupAudioSession() {
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, options: [.duckOthers])
+            try audioSession.setActive(true)
+            print("AVAudioSession configured successfully")
+        } catch {
+            print("Failed to configure AVAudioSession: \(error.localizedDescription)")
+        }
     }
 
     private func setupCamera() {

@@ -27,8 +27,11 @@ import android.os.SystemClock
 class MainActivity : AppCompatActivity() {
 
     private lateinit var viewFinder: PreviewView
+    private lateinit var redFlashOverlay: android.view.View
     private lateinit var cameraExecutor: ExecutorService
     private var faceLandmarker: FaceLandmarker? = null
+
+    private lateinit var alertManager: AlertManager
 
     // Task 3.1: FSM para detección de somnolencia
     private val drowsinessDetector = DrowsinessDetector()
@@ -44,7 +47,10 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         viewFinder = findViewById(R.id.viewFinder)
+        redFlashOverlay = findViewById(R.id.redFlashOverlay)
         cameraExecutor = Executors.newSingleThreadExecutor()
+
+        alertManager = AlertManager(this)
 
         setupFaceLandmarker()
 
@@ -120,8 +126,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        alertManager.stopAlarm(redFlashOverlay)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        alertManager.stopAlarm(redFlashOverlay)
         cameraExecutor.shutdown()
         faceLandmarker?.close()
     }
@@ -180,6 +192,17 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "Calibrating baseline EAR...")
             } else {
                 Log.d(TAG, "Baseline EAR: ${drowsinessDetector.getBaselineEar()}")
+            }
+
+            // Task 4.1: Interfaz y Alertas Físicas
+            when (state) {
+                DrowsinessState.EMERGENCY_SLEEP_DETECTED -> {
+                    alertManager.startAlarm(redFlashOverlay)
+                }
+                DrowsinessState.DRIVER_AWAKE -> {
+                    alertManager.stopAlarm(redFlashOverlay)
+                }
+                else -> { /* Do nothing for normal state */ }
             }
         }
     }
