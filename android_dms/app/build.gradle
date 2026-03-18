@@ -44,4 +44,6 @@ dependencies {
 
     // Task 2.1.1: Añadir librería MediaPipe Tasks Vision
     implementation 'com.google.mediapipe:tasks-vision:0.10.14'
+
+    testImplementation 'junit:junit:4.13.2'
 }
