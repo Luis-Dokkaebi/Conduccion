@@ -14,11 +14,21 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import com.google.mediapipe.framework.image.BitmapImageBuilder
+import com.google.mediapipe.framework.image.MPImage
+import com.google.mediapipe.tasks.core.BaseOptions
+import com.google.mediapipe.tasks.vision.core.RunningMode
+import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker
+import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
+import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.os.SystemClock
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var viewFinder: PreviewView
     private lateinit var cameraExecutor: ExecutorService
+    private var faceLandmarker: FaceLandmarker? = null
 
     companion object {
         private const val TAG = "DMS_CameraX"
@@ -32,6 +42,8 @@ class MainActivity : AppCompatActivity() {
 
         viewFinder = findViewById(R.id.viewFinder)
         cameraExecutor = Executors.newSingleThreadExecutor()
+
+        setupFaceLandmarker()
 
         // Solicitar permisos de cámara
         if (allPermissionsGranted()) {
@@ -63,7 +75,7 @@ class MainActivity : AppCompatActivity() {
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
                 .also {
-                    it.setAnalyzer(cameraExecutor, DmsImageAnalyzer())
+                    it.setAnalyzer(cameraExecutor, DmsImageAnalyzer(faceLandmarker))
                 }
 
             // Task 1.1.1: Usar cámara frontal
@@ -107,20 +119,82 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         cameraExecutor.shutdown()
+        faceLandmarker?.close()
     }
 
-    private class DmsImageAnalyzer : ImageAnalysis.Analyzer {
-        override fun analyze(image: ImageProxy) {
-            // Se obtiene el buffer YUV del frame
-            val buffer = image.planes[0].buffer
-            val data = ByteArray(buffer.capacity())
-            buffer.get(data)
+    private fun setupFaceLandmarker() {
+        val baseOptions = BaseOptions.builder()
+            .setModelAssetPath("face_landmarker.task")
+            .build()
 
-            Log.d(TAG, "Frame YUV analizado. Tamaño: ${data.size} bytes. Rotación: ${image.imageInfo.rotationDegrees}")
+        val optionsBuilder = FaceLandmarker.FaceLandmarkerOptions.builder()
+            .setBaseOptions(baseOptions)
+            .setRunningMode(RunningMode.LIVE_STREAM)
+            .setNumFaces(1)
+            .setResultListener { result, inputImage ->
+                handleFaceLandmarkerResult(result)
+            }
+            .setErrorListener { error ->
+                Log.e(TAG, "Face Landmarker Error: ${error.message}")
+            }
 
-            // TODO: Integrar Tensor TFLite / MediaPipe Face Mesh aquí
+        faceLandmarker = FaceLandmarker.createFromOptions(this, optionsBuilder.build())
+    }
 
-            image.close()
+    private fun handleFaceLandmarkerResult(result: FaceLandmarkerResult) {
+        if (result.faceLandmarks().isNotEmpty()) {
+            val landmarks = result.faceLandmarks()[0]
+
+            // Task 2.1.4: Extract critical indices
+            val leftEyeIndices = listOf(33, 160, 158, 133, 153, 144)
+            val rightEyeIndices = listOf(362, 385, 387, 263, 373, 380)
+            val mouthIndices = listOf(78, 191, 80, 81, 13, 311, 308, 402, 14, 178)
+            val headIndices = listOf(1, 152)
+
+            Log.d(TAG, "Extracted critical landmarks:")
+            Log.d(TAG, "Left Eye: ${leftEyeIndices.map { landmarks[it] }}")
+            Log.d(TAG, "Right Eye: ${rightEyeIndices.map { landmarks[it] }}")
+            Log.d(TAG, "Mouth: ${mouthIndices.map { landmarks[it] }}")
+            Log.d(TAG, "Head: ${headIndices.map { landmarks[it] }}")
+        }
+    }
+
+    private class DmsImageAnalyzer(private val faceLandmarker: FaceLandmarker?) : ImageAnalysis.Analyzer {
+        override fun analyze(imageProxy: ImageProxy) {
+            if (faceLandmarker == null) {
+                imageProxy.close()
+                return
+            }
+
+            // Convert ImageProxy to Bitmap
+            val bitmapBuffer = Bitmap.createBitmap(
+                imageProxy.width,
+                imageProxy.height,
+                Bitmap.Config.ARGB_8888
+            )
+            imageProxy.use { proxy ->
+                bitmapBuffer.copyPixelsFromBuffer(proxy.planes[0].buffer)
+            }
+
+            // Rotate Bitmap according to ImageProxy rotation
+            val matrix = Matrix().apply {
+                postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
+                postScale(-1f, 1f, imageProxy.width.toFloat() / 2, imageProxy.height.toFloat() / 2)
+            }
+
+            val rotatedBitmap = Bitmap.createBitmap(
+                bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true
+            )
+
+            // Convert to MPImage
+            val mpImage = BitmapImageBuilder(rotatedBitmap).build()
+
+            // Run face landmarker
+            try {
+                faceLandmarker.detectAsync(mpImage, SystemClock.uptimeMillis())
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in detectAsync: ${e.message}")
+            }
         }
     }
 }

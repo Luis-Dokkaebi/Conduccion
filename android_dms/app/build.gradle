@@ -41,4 +41,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.10.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    // Task 2.1.1: Añadir librería MediaPipe Tasks Vision
+    implementation 'com.google.mediapipe:tasks-vision:0.10.14'
 }
