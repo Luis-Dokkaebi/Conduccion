@@ -87,3 +87,21 @@ Este documento desglosa el trabajo en Epics, User Stories y Tareas (Tickets) lis
 **Como** Product Owner, **quiero** garantizar la privacidad del chofer **para** cumplir con GDPR/CCPA y que Apple/Google acepten la app.
 * **Task 7.1.1:** Redactar "Privacy Policy" aclarando que ningún video/imagen sale del celular del conductor; solo se envía "telemetría numérica de riesgo".
 * **Task 7.1.2:** Enviar a revisión en App Store (Citar uso del micrófono/cámara solo "in-app" y proveer video de demostración a los revisores).
+## EPIC 8: Motor de Reportes Predictivos y Bloqueo de Rutas
+Este Epic se enfoca en el valor preventivo del DMS para Uber/Logística: Prevenir que choferes cansados tomen nuevos pasajeros.
+
+### Story 8.1: Cálculo del Fatigue Risk Score (FRS)
+**Como** Analista de Datos, **quiero** calcular el riesgo de choque de un chofer (0 a 100) en base a su historial biométrico de las últimas 4 horas **para** bloquear su inicio de viaje.
+* **Task 8.1.1:** Escribir servicio Python que asigne 35pts por microsueño, 5pts por bostezo, 8pts por distracción.
+* **Task 8.1.2:** Escribir el decay job (Cron) que reste 20pts por cada hora real de descanso del vehículo.
+
+### Story 8.2: Integración de Bloqueo al API de Despacho (Didi/Logística)
+**Como** Sistema de Asignación, **quiero** preguntar si el chofer está fresco o agotado **para** autorizar el viaje.
+* **Task 8.2.1:** (Backend Python) Crear endpoint `/api/v1/mobile_dms/clearance/{driver_id}` que devuelva `ALLOWED` (0-49pts), `WARNING` (50-74pts), `BLOCKED_FATIGUE` (75-100pts) con sus tiempos obligatorios de descanso en minutos.
+* **Task 8.2.2:** (Móvil UI) Crear la pantalla "Fatiga Acumulada - Viaje Pausado. Podrá conducir de nuevo en 45:00 min".
+
+### Story 8.3: Generación de Reportes Automatizados PDF (Shift Summary)
+**Como** Gerente de Flota/Sindicato, **quiero** un PDF diario de cada chofer **para** auditar el cumplimiento normativo de "Horas de Servicio y Descanso Fisiológico".
+* **Task 8.3.1:** Instalar `ReportLab` o librerías PDF en el entorno Python.
+* **Task 8.3.2:** Generar gráficos de barras agrupando incidentes por hora (Ej: Pico a las 03:00 AM).
+* **Task 8.3.3:** Enviar un reporte por correo o colocarlo en S3/MinIO al finalizar el turno del chofer si el FRS alguna vez alcanzó nivel ROJO en la jornada, catalogándolo como un reporte "PRIORITY REVIEW".

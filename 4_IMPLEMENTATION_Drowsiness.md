@@ -205,3 +205,73 @@ async def receive_driver_event(event: TelemetryEvent, db: DatabaseManager = Depe
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 ```
+
+---
+
+## 5. Algoritmo Predictivo de FRS en el Servidor (Python)
+
+Este servicio corre independientemente del móvil. Cuando el chofer pide tomar un viaje, el sistema evalúa su historial reciente.
+
+```python
+# src/analysis/fatigue_scorer.py (Backend Predictivo FRS)
+import datetime
+
+class FatigueRiskScorer:
+    # Constantes Biométricas de Riesgo
+    POINTS_MICROSLEEP = 35.0
+    POINTS_ABORTED_SLEEP = 10.0
+    POINTS_YAWN = 5.0
+    POINTS_DISTRACTION = 8.0
+
+    DECAY_RATE_PER_REST_HOUR = 20.0 # Puntos recuperados por hora sin conducir
+
+    def calculate_current_frs(self, db, driver_id: str) -> dict:
+        \"\"\"Calcula el FRS (0 a 100) basado en las últimas 4 horas.\"\"\"
+        four_hours_ago = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=4)
+
+        # Recuperar incidentes de la DB (Mismos generados por la app móvil)
+        incidents = db.query(f"SELECT * FROM mobile_infractions WHERE driver_id='{driver_id}' AND ts > '{four_hours_ago}'")
+
+        frs = 0.0
+        last_event_time = None
+
+        for inc in incidents:
+            if inc.type == 'MICROSLEEP':
+                frs += self.POINTS_MICROSLEEP
+            elif inc.type == 'ABORTED_SLEEP':
+                frs += self.POINTS_ABORTED_SLEEP
+            elif inc.type == 'DISTRACTION_YAW' or inc.type == 'DISTRACTION_PITCH':
+                frs += self.POINTS_DISTRACTION
+            elif inc.type == 'YAWN_CHAIN':
+                frs += self.POINTS_YAWN
+
+            last_event_time = inc.ts
+
+        # Calcular el "Decay" por descanso si el coche lleva estacionado/no ha reportado en X horas
+        if last_event_time:
+            hours_since_last_event = (datetime.datetime.now(datetime.UTC) - last_event_time).total_seconds() / 3600.0
+            if hours_since_last_event > 0.5: # Media hora de gracia (ej. Cargando combustible)
+                rest_recovery = (hours_since_last_event - 0.5) * self.DECAY_RATE_PER_REST_HOUR
+                frs -= rest_recovery
+
+        # Limites Absolutos (0 a 100)
+        frs = max(0.0, min(100.0, frs))
+
+        status = "ALLOWED"
+        min_rest_minutes = 0
+        if frs >= 75.0:
+            status = "BLOCKED_FATIGUE"
+            # Calcular cuánto descanso necesita para bajar a 49pts (Nivel Verde)
+            points_to_lose = frs - 49.0
+            min_rest_minutes = int((points_to_lose / self.DECAY_RATE_PER_REST_HOUR) * 60)
+        elif frs >= 50.0:
+            status = "WARNING"
+
+        return {"frs_score": round(frs, 1), "dispatch_status": status, "mandatory_rest_min": min_rest_minutes}
+
+# src/api/clearance.py
+@router.get("/v1/mobile_dms/clearance/{driver_id}")
+async def check_driver_clearance(driver_id: str):
+    scorer = FatigueRiskScorer()
+    return scorer.calculate_current_frs(get_database_connection(), driver_id)
+```

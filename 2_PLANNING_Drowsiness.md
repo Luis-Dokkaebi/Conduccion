@@ -54,3 +54,10 @@ El proyecto consiste en el desarrollo de un motor de Visión Artificial Móvil (
 2. **Latencia del Despertar:** Alarma emitida en un máximo de **200 ms** tras rebasar el umbral de los 1.5s críticos.
 3. **Consumo de Batería:** Descarga no superior al 15-20% por hora en estado "dimmed screen" / PiP a 15 FPS.
 4. **Data Size:** Transferencias al backend no mayores a 1MB diarios por conductor (Solo JSON, sin stream de video).
+### Sprint 7: "Motor de Reportes Predictivos y Bloqueo de Despacho" (Semana 13-14)
+* **Objetivo:** Transformar los datos crudos en decisiones de negocio que salven vidas *antes* del viaje (Predictivo). Implementar el FRS (Fatigue Risk Score).
+* **Entregable (Backend Python):** Endpoint `/clearance` que responde si el chofer puede manejar o no basado en su FRS. Generación automatizada de PDFs diarios de "Horas de Servicio y Riesgo Biométrico".
+* **Entregable (Móvil):** Pantalla de "Viaje Bloqueado por Fatiga Acumulada" con temporizador de cuenta regresiva para poder volver a conducir.
+
+## 6. Integración Funcional con RRHH y Despacho
+* **Rol Nuevo Requerido:** *Data Analyst / Gerente de Flota*. Quien interpretará los Reportes PDFs diarios de OficinaEficiencia para identificar choferes con probables trastornos de sueño (Apnea) y programarles exámenes médicos, en lugar de solo castigarlos.

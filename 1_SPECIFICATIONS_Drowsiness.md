@@ -1122,3 +1122,34 @@ Regla FSM 146: Si Condición_Umbral_146 = Verdadero Y Thermal_State = Normal, En
 Regla FSM 147: Si Condición_Umbral_147 = Verdadero Y Thermal_State = Normal, Entonces Despliegue_Accion=294.
 Regla FSM 148: Si Condición_Umbral_148 = Verdadero Y Thermal_State = Normal, Entonces Despliegue_Accion=296.
 Regla FSM 149: Si Condición_Umbral_149 = Verdadero Y Thermal_State = Normal, Entonces Despliegue_Accion=298.
+## 21. Especificaciones Ultra Detalladas del Motor de Reportes Predictivos (Fatigue Risk Score)
+
+Para prevenir accidentes *antes* de que ocurran, el sistema no solo debe despertar al chofer con una alarma en tiempo real (reacción), sino generar reportes predictivos para que el Dispatcher o Administrador logístico bloquee al conductor si su nivel de fatiga residual lo hace no apto para iniciar o continuar un viaje.
+
+### 21.1 Algoritmo de Puntuación FRS (Fatigue Risk Score)
+El FRS es un valor de `0.0` (Perfectamente descansado) a `100.0` (Peligro Inminente).
+Se calcula como una suma ponderada de eventos fisiológicos detectados en las últimas 4 horas de conducción.
+
+*   **Microsueño Crítico (EAR < 0.22 por 1.5s):** +35.0 Puntos.
+*   **Microsueño Abortado (EAR < 0.22 por 0.8s):** +10.0 Puntos.
+*   **Bostezo Confirmado (MAR > 0.60 por 1.5s):** +5.0 Puntos.
+*   **Distracción Prolongada (Head Pose Anómala > 3s):** +8.0 Puntos.
+
+**Decaimiento por Descanso (Recovery Decay):**
+Si la aplicación detecta (por el GPS) que el vehículo lleva detenido 0 km/h y el motor de la app está "Pausado/En descanso" por al menos 30 minutos consecutivos, el puntaje decae (se resta) exponencialmente:
+*Fórmula:* $FRS_{nuevo} = FRS_{actual} - (20.0 \times \text{Horas de Descanso})$
+
+### 21.2 Lógica de Bloqueo Automático de Viajes (Clearance Engine)
+Antes de que Didi/Uber asigne un nuevo pasajero, o antes de que el trailero encienda el camión en la central, la API central de despacho debe consultar el estado del conductor.
+
+*   **Nivel Verde (0 - 49 Puntos):** "Clear for Dispatch". El conductor es asignado normalmente.
+*   **Nivel Naranja (50 - 74 Puntos):** "Warning". Se aprueba el viaje, pero se envía un mensaje automático en pantalla: *"Fatiga acumulada detectada. Por favor, tómese un café en los próximos 15 minutos"*. El Dispatcher recibe una notificación pasiva.
+*   **Nivel Rojo (75 - 100 Puntos):** "Grounded / Bloqueado". El conductor NO es elegible para el próximo viaje. La app del celular se bloquea en una pantalla que indica: *"Por su seguridad y la de sus pasajeros, su cuenta está pausada por fatiga extrema. Tiempo de descanso mandatorio restante: 1 hora 45 minutos."*
+
+### 21.3 Arquitectura del Generador de Reportes (PDF y Web Dashboard)
+Para cumplimiento de normativas de Transporte (ej. Horas de Servicio / HOS logs en USA o normativas SCT en México):
+
+1.  **Reporte de Fin de Turno (Shift Summary):**
+    El Backend de OficinaEficiencia corre un *Cron Job* diario a las 00:00 que extrae todos los eventos de la tabla `mobile_infractions` y la tabla de puntaje FRS.
+2.  **Generación de PDF:** Usando librerías Python (como `ReportLab`), genera un PDF con gráficos de barras mostrando los "Picos de Somnolencia" por horas. Esto evidencia si el conductor sufre regularmente del bajón de energía post-almuerzo (Post-prandial dip a las 14:00) o bajón circadiano nocturno (03:00 AM).
+3.  **Auditoría y Seguros:** El reporte de fatiga se anexa a la póliza del seguro. Si hubo un accidente a las 15:30 y el reporte indica FRS=85 (Rojo) a las 15:20, la responsabilidad corporativa queda documentada.

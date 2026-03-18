@@ -51,3 +51,7 @@ if (currentEar < threshold) {
 
 ## 4. Conclusión Final del Review
 El sistema está **Aprobado para Desarrollo (Go-Ahead)** sujeto a la corrección del "Contador de tiempo basado en ms en lugar de Frames". La suite de documentos es hiper-robusta y provee una hoja de ruta clara para construir un producto B2B de primer nivel en la industria de la movilidad.
+### Análisis de la Arquitectura de Reportes y "Clearance API" (Fatigue Risk Score)
+**Observación:** La idea de generar un PDF al día al Gerente es vital para RRHH y Seguros. Además, el FRS (Puntaje de 0-100) es lo que distingue esto de una "Cámara Dashcam Normal" a una Verdadera IA de Logística.
+*   **Decaimiento por Descanso (Recovery Decay):** El algoritmo actual de Python resta `20 puntos por hora` sin eventos. Sin embargo, hay un bug conceptual: Si la App está apagada (Porque el chofer terminó su turno el viernes), el sistema asumirá un descanso pasivo y bajará los puntos. Esto ES CORRECTO. Pero, ¿y si apagó la App y condujo otro camión sin el DMS?
+*   **Acción Requerida para QA y Operaciones:** El sistema "Store-and-Forward" de sincronización es el que sube los puntos negativos al chofer, por lo que el FRS del servidor solo se entera cuando recupera cobertura 4G. En zonas sin señal (offline prolongado), el FRS en el móvil podría seguir subiendo, por lo que la App también debe tener una copia en memoria del "Fatigue Score" y auto-bloquearse nativamente sin esperar permiso de la red. ¡La penalización debe ser Edge + Cloud, no solo Cloud!
