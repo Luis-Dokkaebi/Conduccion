@@ -2,9 +2,15 @@ package com.dms.app
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import android.os.Bundle
 import android.util.Log
 import android.util.Size
+import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
@@ -28,6 +34,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var viewFinder: PreviewView
     private lateinit var redFlashOverlay: android.view.View
+    private lateinit var dimmingOverlay: android.view.View
     private lateinit var cameraExecutor: ExecutorService
     private var faceLandmarker: FaceLandmarker? = null
 
@@ -35,6 +42,12 @@ class MainActivity : AppCompatActivity() {
 
     // Task 3.1: FSM para detección de somnolencia
     private val drowsinessDetector = DrowsinessDetector()
+
+    // Task 5.1: Prevención de Thermal Throttling
+    @Volatile private var isThrottled = false
+    private var lastFrameTime = 0L
+    private val THROTTLED_FRAME_INTERVAL_MS = 100L // 10 FPS
+    private var dimmingTemporarilyDisabledUntil = 0L
 
     companion object {
         private const val TAG = "DMS_CameraX"
@@ -48,11 +61,14 @@ class MainActivity : AppCompatActivity() {
 
         viewFinder = findViewById(R.id.viewFinder)
         redFlashOverlay = findViewById(R.id.redFlashOverlay)
+        dimmingOverlay = findViewById(R.id.dimmingOverlay)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         alertManager = AlertManager(this)
 
         setupFaceLandmarker()
+
+        setupDimmingTouchListener()
 
         // Solicitar permisos de cámara
         if (allPermissionsGranted()) {
@@ -126,9 +142,37 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Task 5.1.1: Monitor thermal status
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_BATTERY_CHANGED) {
+                val temperature = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) // Given in tenths of a degree Celsius
+
+                // > 40°C triggers throttling
+                if (temperature >= 400 && !isThrottled) {
+                    Log.w(TAG, "Thermal Throttling Activated! Temp: ${temperature / 10f}°C")
+                    isThrottled = true
+                    drowsinessDetector.setThrottled(true)
+                }
+                // < 38°C untriggers throttling (hysteresis)
+                else if (temperature <= 380 && isThrottled) {
+                    Log.i(TAG, "Thermal Throttling Deactivated. Temp: ${temperature / 10f}°C")
+                    isThrottled = false
+                    drowsinessDetector.setThrottled(false)
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+    }
+
     override fun onPause() {
         super.onPause()
         alertManager.stopAlarm(redFlashOverlay)
+        unregisterReceiver(batteryReceiver)
     }
 
     override fun onDestroy() {
@@ -136,6 +180,20 @@ class MainActivity : AppCompatActivity() {
         alertManager.stopAlarm(redFlashOverlay)
         cameraExecutor.shutdown()
         faceLandmarker?.close()
+    }
+
+    // Task 5.1.3: Dimming mode touch logic
+    private fun setupDimmingTouchListener() {
+        dimmingOverlay.setOnClickListener {
+            // Disable dimming for 5 seconds when touched
+            dimmingTemporarilyDisabledUntil = SystemClock.uptimeMillis() + 5000L
+            dimmingOverlay.visibility = View.GONE
+        }
+
+        // Clicks on the normal view also disable dimming for 5s
+        viewFinder.setOnClickListener {
+             dimmingTemporarilyDisabledUntil = SystemClock.uptimeMillis() + 5000L
+        }
     }
 
     private fun setupFaceLandmarker() {
@@ -198,21 +256,45 @@ class MainActivity : AppCompatActivity() {
             when (state) {
                 DrowsinessState.EMERGENCY_SLEEP_DETECTED -> {
                     alertManager.startAlarm(redFlashOverlay)
+
+                    // Task 5.1.3: Hide dimming overlay if alarm triggered
+                    runOnUiThread { dimmingOverlay.visibility = View.GONE }
                 }
                 DrowsinessState.DRIVER_AWAKE -> {
                     alertManager.stopAlarm(redFlashOverlay)
                 }
                 else -> { /* Do nothing for normal state */ }
             }
+
+            // Task 5.1.3: Update dimming overlay visibility based on throttling and touch timeout
+            runOnUiThread {
+                if (state != DrowsinessState.EMERGENCY_SLEEP_DETECTED) {
+                    if (isThrottled && SystemClock.uptimeMillis() > dimmingTemporarilyDisabledUntil) {
+                        dimmingOverlay.visibility = View.VISIBLE
+                    } else {
+                        dimmingOverlay.visibility = View.GONE
+                    }
+                }
+            }
         }
     }
 
-    private class DmsImageAnalyzer(private val faceLandmarker: FaceLandmarker?) : ImageAnalysis.Analyzer {
+    private inner class DmsImageAnalyzer(private val faceLandmarker: FaceLandmarker?) : ImageAnalysis.Analyzer {
         override fun analyze(imageProxy: ImageProxy) {
             if (faceLandmarker == null) {
                 imageProxy.close()
                 return
             }
+
+            // Task 5.1.2: Drop frames to meet 10 FPS if throttled
+            val currentTime = SystemClock.uptimeMillis()
+            if (isThrottled) {
+                if (currentTime - lastFrameTime < THROTTLED_FRAME_INTERVAL_MS) {
+                    imageProxy.close()
+                    return // Skip frame
+                }
+            }
+            lastFrameTime = currentTime
 
             // Convert ImageProxy to Bitmap
             val bitmapBuffer = Bitmap.createBitmap(

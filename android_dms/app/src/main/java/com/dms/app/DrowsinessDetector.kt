@@ -9,15 +9,35 @@ enum class DrowsinessState {
 }
 
 class DrowsinessDetector(
-    private val bufferSize: Int = 45,
+    private var bufferSize: Int = 45,
     private val sleepThreshold: Float = 0.22f,
     private val awakeThreshold: Float = 0.28f,
-    private val awakeFramesRequired: Int = 15,
+    private var awakeFramesRequired: Int = 15,
     private val calibrationTimeMs: Long = 10000L
 ) {
     private val earBuffer = LinkedList<Float>()
     private var currentState = DrowsinessState.NORMAL
     private var awakeFramesCount = 0
+    private var isThrottled = false
+
+    // Task 5.1.2: Ajustar la ventana de tiempo del DrowsinessDetector (15 frames = 1.5s)
+    fun setThrottled(throttled: Boolean) {
+        if (isThrottled == throttled) return
+        isThrottled = throttled
+
+        if (throttled) {
+            bufferSize = 15
+            awakeFramesRequired = 5
+
+            // Trim buffer if necessary
+            while (earBuffer.size > bufferSize) {
+                earBuffer.removeFirst()
+            }
+        } else {
+            bufferSize = 45
+            awakeFramesRequired = 15
+        }
+    }
 
     private var isCalibrating = true
     private val calibrationEarValues = mutableListOf<Float>()
