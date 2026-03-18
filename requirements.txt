@@ -9,3 +9,6 @@ face_recognition
 tkcalendar
 matplotlib
 reportlab
+fastapi
+uvicorn
+pydantic

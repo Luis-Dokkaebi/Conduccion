@@ -2,9 +2,15 @@ package com.dms.app
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import android.os.Bundle
 import android.util.Log
 import android.util.Size
+import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
@@ -23,15 +29,68 @@ import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.SystemClock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.NetworkType
+import androidx.work.Constraints
+import java.util.concurrent.TimeUnit
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var viewFinder: PreviewView
+    private lateinit var redFlashOverlay: android.view.View
+    private lateinit var dimmingOverlay: android.view.View
     private lateinit var cameraExecutor: ExecutorService
     private var faceLandmarker: FaceLandmarker? = null
 
+    private lateinit var alertManager: AlertManager
+
     // Task 3.1: FSM para detección de somnolencia
     private val drowsinessDetector = DrowsinessDetector()
+
+    // Task 5.1: Prevención de Thermal Throttling
+    @Volatile private var isThrottled = false
+    private var lastFrameTime = 0L
+    private val THROTTLED_FRAME_INTERVAL_MS = 100L // 10 FPS
+    private var dimmingTemporarilyDisabledUntil = 0L
+
+    // Task 6.1: Almacenamiento Local (Store and Forward)
+    private var sleepStartTimeMs: Long = 0L
+    private var lastRecordedEar: Float = 0f
+
+    // Task 8.2: Receptor de actualizaciones de clearance
+    private val clearanceReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == TelemetrySyncWorker.ACTION_CLEARANCE_UPDATE) {
+                val status = intent.getStringExtra("status")
+                val frsScore = intent.getFloatExtra("frs_score", 0f)
+                val message = intent.getStringExtra("message")
+                val restMinutes = intent.getIntExtra("mandatory_rest_minutes", 0)
+
+                if (status == "BLOCKED_FATIGUE") {
+                    Log.w(TAG, "Driver blocked due to fatigue. Launching ClearanceActivity.")
+                    val clearanceIntent = Intent(this@MainActivity, ClearanceActivity::class.java).apply {
+                        putExtra("status", status)
+                        putExtra("frs_score", frsScore)
+                        putExtra("message", message)
+                        putExtra("mandatory_rest_minutes", restMinutes)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    }
+                    startActivity(clearanceIntent)
+                    finish() // Close main monitoring activity
+                } else if (status == "WARNING") {
+                    Log.w(TAG, "Driver warning: $message")
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
 
     companion object {
         private const val TAG = "DMS_CameraX"
@@ -44,9 +103,17 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         viewFinder = findViewById(R.id.viewFinder)
+        redFlashOverlay = findViewById(R.id.redFlashOverlay)
+        dimmingOverlay = findViewById(R.id.dimmingOverlay)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
+        alertManager = AlertManager(this)
+
         setupFaceLandmarker()
+
+        setupDimmingTouchListener()
+
+        setupTelemetrySyncWorker()
 
         // Solicitar permisos de cámara
         if (allPermissionsGranted()) {
@@ -120,10 +187,106 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Task 5.1.1: Monitor thermal status
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_BATTERY_CHANGED) {
+                val temperature = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) // Given in tenths of a degree Celsius
+
+                // > 40°C triggers throttling
+                if (temperature >= 400 && !isThrottled) {
+                    Log.w(TAG, "Thermal Throttling Activated! Temp: ${temperature / 10f}°C")
+                    isThrottled = true
+                    drowsinessDetector.setThrottled(true)
+                }
+                // < 38°C untriggers throttling (hysteresis)
+                else if (temperature <= 380 && isThrottled) {
+                    Log.i(TAG, "Thermal Throttling Deactivated. Temp: ${temperature / 10f}°C")
+                    isThrottled = false
+                    drowsinessDetector.setThrottled(false)
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        LocalBroadcastManager.getInstance(this).registerReceiver(
+            clearanceReceiver, IntentFilter(TelemetrySyncWorker.ACTION_CLEARANCE_UPDATE)
+        )
+    }
+
+    override fun onPause() {
+        super.onPause()
+        alertManager.stopAlarm(redFlashOverlay)
+        unregisterReceiver(batteryReceiver)
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(clearanceReceiver)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        alertManager.stopAlarm(redFlashOverlay)
         cameraExecutor.shutdown()
         faceLandmarker?.close()
+
+        // Task 8.3: Terminar turno e invocar la generación del reporte PDF
+        endShiftAndGenerateReport()
+    }
+
+    private fun endShiftAndGenerateReport() {
+        Log.i(TAG, "Ending shift and requesting PDF report from backend...")
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val retrofit = Retrofit.Builder()
+                    .baseUrl("http://10.0.2.2:8000") // Same URL as TelemetrySyncWorker
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .build()
+                val dmsApi = retrofit.create(DmsApi::class.java)
+                val response = dmsApi.endShift("driver_123")
+                if (response.isSuccessful) {
+                    Log.i(TAG, "Successfully triggered end_shift API.")
+                } else {
+                    Log.e(TAG, "Failed to trigger end_shift API. Status: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception calling end_shift API", e)
+            }
+        }
+    }
+
+    // Task 6.2.2: Crear un servicio de WorkManager que corra cada 15 min
+    private fun setupTelemetrySyncWorker() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        val syncWorkRequest = PeriodicWorkRequestBuilder<TelemetrySyncWorker>(
+            15, TimeUnit.MINUTES // Minimum periodic interval is 15 minutes
+        )
+        .setConstraints(constraints)
+        .build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "TelemetrySyncWorker",
+            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            syncWorkRequest
+        )
+        Log.i(TAG, "Enqueued unique periodic telemetry sync worker.")
+    }
+
+    // Task 5.1.3: Dimming mode touch logic
+    private fun setupDimmingTouchListener() {
+        dimmingOverlay.setOnClickListener {
+            // Disable dimming for 5 seconds when touched
+            dimmingTemporarilyDisabledUntil = SystemClock.uptimeMillis() + 5000L
+            dimmingOverlay.visibility = View.GONE
+        }
+
+        // Clicks on the normal view also disable dimming for 5s
+        viewFinder.setOnClickListener {
+             dimmingTemporarilyDisabledUntil = SystemClock.uptimeMillis() + 5000L
+        }
     }
 
     private fun setupFaceLandmarker() {
@@ -181,15 +344,76 @@ class MainActivity : AppCompatActivity() {
             } else {
                 Log.d(TAG, "Baseline EAR: ${drowsinessDetector.getBaselineEar()}")
             }
+
+            // Task 4.1: Interfaz y Alertas Físicas
+            when (state) {
+                DrowsinessState.EMERGENCY_SLEEP_DETECTED -> {
+                    if (sleepStartTimeMs == 0L) {
+                        sleepStartTimeMs = SystemClock.uptimeMillis()
+                        lastRecordedEar = avgEar
+                    }
+
+                    alertManager.startAlarm(redFlashOverlay)
+
+                    // Task 5.1.3: Hide dimming overlay if alarm triggered
+                    runOnUiThread { dimmingOverlay.visibility = View.GONE }
+                }
+                DrowsinessState.DRIVER_AWAKE -> {
+                    if (sleepStartTimeMs != 0L) {
+                        // Sleep episode just ended, record it
+                        val durationSeconds = (SystemClock.uptimeMillis() - sleepStartTimeMs) / 1000f
+                        recordMicroSleepEvent(lastRecordedEar, durationSeconds)
+                        sleepStartTimeMs = 0L
+                    }
+                    alertManager.stopAlarm(redFlashOverlay)
+                }
+                else -> { /* Do nothing for normal state */ }
+            }
+
+            // Task 5.1.3: Update dimming overlay visibility based on throttling and touch timeout
+            runOnUiThread {
+                if (state != DrowsinessState.EMERGENCY_SLEEP_DETECTED) {
+                    if (isThrottled && SystemClock.uptimeMillis() > dimmingTemporarilyDisabledUntil) {
+                        dimmingOverlay.visibility = View.VISIBLE
+                    } else {
+                        dimmingOverlay.visibility = View.GONE
+                    }
+                }
+            }
         }
     }
 
-    private class DmsImageAnalyzer(private val faceLandmarker: FaceLandmarker?) : ImageAnalysis.Analyzer {
+    // Task 6.1.2: Grabar en DB local cada vez que se dispare una alerta
+    private fun recordMicroSleepEvent(earValue: Float, durationSeconds: Float) {
+        val event = MicroSleepEvent(
+            timestamp = System.currentTimeMillis(),
+            earValue = earValue,
+            durationSeconds = durationSeconds,
+            gpsLat = 0.0, // Assuming GPS tracking is not implemented yet
+            gpsLng = 0.0
+        )
+        CoroutineScope(Dispatchers.IO).launch {
+            AppDatabase.getDatabase(this@MainActivity).microSleepEventDao().insertEvent(event)
+            Log.d(TAG, "Recorded MicroSleepEvent: $event")
+        }
+    }
+
+    private inner class DmsImageAnalyzer(private val faceLandmarker: FaceLandmarker?) : ImageAnalysis.Analyzer {
         override fun analyze(imageProxy: ImageProxy) {
             if (faceLandmarker == null) {
                 imageProxy.close()
                 return
             }
+
+            // Task 5.1.2: Drop frames to meet 10 FPS if throttled
+            val currentTime = SystemClock.uptimeMillis()
+            if (isThrottled) {
+                if (currentTime - lastFrameTime < THROTTLED_FRAME_INTERVAL_MS) {
+                    imageProxy.close()
+                    return // Skip frame
+                }
+            }
+            lastFrameTime = currentTime
 
             // Convert ImageProxy to Bitmap
             val bitmapBuffer = Bitmap.createBitmap(
