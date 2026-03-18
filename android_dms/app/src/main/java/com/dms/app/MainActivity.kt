@@ -29,6 +29,14 @@ import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.SystemClock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.NetworkType
+import androidx.work.Constraints
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
@@ -48,6 +56,10 @@ class MainActivity : AppCompatActivity() {
     private var lastFrameTime = 0L
     private val THROTTLED_FRAME_INTERVAL_MS = 100L // 10 FPS
     private var dimmingTemporarilyDisabledUntil = 0L
+
+    // Task 6.1: Almacenamiento Local (Store and Forward)
+    private var sleepStartTimeMs: Long = 0L
+    private var lastRecordedEar: Float = 0f
 
     companion object {
         private const val TAG = "DMS_CameraX"
@@ -69,6 +81,8 @@ class MainActivity : AppCompatActivity() {
         setupFaceLandmarker()
 
         setupDimmingTouchListener()
+
+        setupTelemetrySyncWorker()
 
         // Solicitar permisos de cámara
         if (allPermissionsGranted()) {
@@ -182,6 +196,22 @@ class MainActivity : AppCompatActivity() {
         faceLandmarker?.close()
     }
 
+    // Task 6.2.2: Crear un servicio de WorkManager que corra cada 15 min
+    private fun setupTelemetrySyncWorker() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        val syncWorkRequest = PeriodicWorkRequestBuilder<TelemetrySyncWorker>(
+            15, TimeUnit.MINUTES // Minimum periodic interval is 15 minutes
+        )
+        .setConstraints(constraints)
+        .build()
+
+        WorkManager.getInstance(this).enqueue(syncWorkRequest)
+        Log.i(TAG, "Enqueued periodic telemetry sync worker.")
+    }
+
     // Task 5.1.3: Dimming mode touch logic
     private fun setupDimmingTouchListener() {
         dimmingOverlay.setOnClickListener {
@@ -255,12 +285,23 @@ class MainActivity : AppCompatActivity() {
             // Task 4.1: Interfaz y Alertas Físicas
             when (state) {
                 DrowsinessState.EMERGENCY_SLEEP_DETECTED -> {
+                    if (sleepStartTimeMs == 0L) {
+                        sleepStartTimeMs = SystemClock.uptimeMillis()
+                        lastRecordedEar = avgEar
+                    }
+
                     alertManager.startAlarm(redFlashOverlay)
 
                     // Task 5.1.3: Hide dimming overlay if alarm triggered
                     runOnUiThread { dimmingOverlay.visibility = View.GONE }
                 }
                 DrowsinessState.DRIVER_AWAKE -> {
+                    if (sleepStartTimeMs != 0L) {
+                        // Sleep episode just ended, record it
+                        val durationSeconds = (SystemClock.uptimeMillis() - sleepStartTimeMs) / 1000f
+                        recordMicroSleepEvent(lastRecordedEar, durationSeconds)
+                        sleepStartTimeMs = 0L
+                    }
                     alertManager.stopAlarm(redFlashOverlay)
                 }
                 else -> { /* Do nothing for normal state */ }
@@ -276,6 +317,21 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+    }
+
+    // Task 6.1.2: Grabar en DB local cada vez que se dispare una alerta
+    private fun recordMicroSleepEvent(earValue: Float, durationSeconds: Float) {
+        val event = MicroSleepEvent(
+            timestamp = System.currentTimeMillis(),
+            earValue = earValue,
+            durationSeconds = durationSeconds,
+            gpsLat = 0.0, // Assuming GPS tracking is not implemented yet
+            gpsLng = 0.0
+        )
+        CoroutineScope(Dispatchers.IO).launch {
+            AppDatabase.getDatabase(this@MainActivity).microSleepEventDao().insertEvent(event)
+            Log.d(TAG, "Recorded MicroSleepEvent: $event")
         }
     }
 
