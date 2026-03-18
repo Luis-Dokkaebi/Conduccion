@@ -73,6 +73,7 @@ class MainActivity : AppCompatActivity() {
             val imageAnalyzer = ImageAnalysis.Builder()
                 .setTargetResolution(Size(640, 480))
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                 .build()
                 .also {
                     it.setAnalyzer(cameraExecutor, DmsImageAnalyzer(faceLandmarker))
@@ -156,6 +157,18 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "Right Eye: ${rightEyeIndices.map { landmarks[it] }}")
             Log.d(TAG, "Mouth: ${mouthIndices.map { landmarks[it] }}")
             Log.d(TAG, "Head: ${headIndices.map { landmarks[it] }}")
+
+            // Task 2.2: Compute math metrics (EAR, MAR, and Head Pose)
+            val leftEar = DrowsinessMath.calculateEar(landmarks, leftEyeIndices)
+            val rightEar = DrowsinessMath.calculateEar(landmarks, rightEyeIndices)
+            val avgEar = (leftEar + rightEar) / 2.0f
+
+            val marMouthIndices = listOf(78, 13, 308, 14) // Left, Top, Right, Bottom
+            val mar = DrowsinessMath.calculateMar(landmarks, marMouthIndices)
+
+            val (yaw, pitch) = DrowsinessMath.calculateHeadPose(landmarks)
+
+            Log.d(TAG, "Metrics -> EAR: $avgEar (L: $leftEar, R: $rightEar), MAR: $mar, HeadPose(Yaw,Pitch): ($yaw, $pitch)")
         }
     }
 
