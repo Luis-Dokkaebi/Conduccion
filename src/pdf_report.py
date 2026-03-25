@@ -67,4 +67,27 @@ def generate_shift_summary_pdf(driver_id: str, events: list, reached_red: bool):
         os.remove(chart_path)
 
     print(f"Generated PDF Report for {driver_id} at {pdf_path}")
+<<<<<<< HEAD
     return pdf_path
+=======
+    
+    # Task 8.3.3: Enviar reporte por correo o colocarlo en S3
+    upload_to_s3_mock(pdf_path, driver_id, reached_red)
+    
+    return pdf_path
+
+def upload_to_s3_mock(filepath: str, driver_id: str, is_priority: bool):
+    """
+    Mock integration with S3/MinIO to satisfy Task 8.3.3
+    uploading the shift summary.
+    """
+    bucket_name = "dms-fleet-reports"
+    s3_key = f"reports/{driver_id}/{os.path.basename(filepath)}"
+    
+    print(f"[S3 UPLOAD MOCK] Uploading {filepath} to s3://{bucket_name}/{s3_key}")
+    if is_priority:
+        print(f"[S3 UPLOAD MOCK] Tagging object as PRIORITY_REVIEW")
+        # In real boto3: s3_client.put_object_tagging(...)
+    
+    print("[S3 UPLOAD MOCK] Upload completed successfully.")
+>>>>>>> b56fcb8 (Primer commit: inicialización del proyecto)

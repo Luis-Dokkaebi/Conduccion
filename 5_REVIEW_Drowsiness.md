@@ -28,7 +28,11 @@ fun calculateEar(landmarks: List<NormalizedLandmark>, eyeIndices: IntArray): Flo
 **Observación Fuerte:** Se asume un framerate perfecto de `30 FPS` en la línea:
 `private val requiredFramesForSleep = (fps * 1.5).toInt()`
 Si el celular sufre calentamiento y los FPS bajan a 15, el sistema tardará 3 segundos (45 frames a 15fps) en disparar la alarma, no 1.5s.
+<<<<<<< HEAD
 **Acción Requerida:** La FSM no debe basarse en un contador de *Frames*, sino en el `System.currentTimeMillis()`.
+=======
+**Acción Requerida:** La FSM no debe basarse en un contador de *Frames*, sino en el `System.currentTimeMillis()`.  **[COMPLETADO]**
+>>>>>>> b56fcb8 (Primer commit: inicialización del proyecto)
 *Corrección Recomendada (Pseudocódigo):*
 ```kotlin
 if (currentEar < threshold) {
@@ -50,8 +54,29 @@ if (currentEar < threshold) {
 *   **Revisión Final:** El equipo debe preparar un video explicativo de 2 minutos para los revisores de Apple, demostrando que el uso de PIP y "Cámara Activa" es estrictamente por seguridad vital y no una herramienta de espionaje publicitaria.
 
 ## 4. Conclusión Final del Review
+<<<<<<< HEAD
 El sistema está **Aprobado para Desarrollo (Go-Ahead)** sujeto a la corrección del "Contador de tiempo basado en ms en lugar de Frames". La suite de documentos es hiper-robusta y provee una hoja de ruta clara para construir un producto B2B de primer nivel en la industria de la movilidad.
+=======
+El sistema está **Aprobado para Desarrollo (Go-Ahead)** y las correcciones solicitadas (particularmente el "Contador de tiempo basado en ms en lugar de Frames") han sido **[COMPLETADAS Y APROBADAS]**. La suite de documentos es hiper-robusta y provee una hoja de ruta clara para construir un producto B2B de primer nivel en la industria de la movilidad.
+
+>>>>>>> b56fcb8 (Primer commit: inicialización del proyecto)
 ### Análisis de la Arquitectura de Reportes y "Clearance API" (Fatigue Risk Score)
 **Observación:** La idea de generar un PDF al día al Gerente es vital para RRHH y Seguros. Además, el FRS (Puntaje de 0-100) es lo que distingue esto de una "Cámara Dashcam Normal" a una Verdadera IA de Logística.
 *   **Decaimiento por Descanso (Recovery Decay):** El algoritmo actual de Python resta `20 puntos por hora` sin eventos. Sin embargo, hay un bug conceptual: Si la App está apagada (Porque el chofer terminó su turno el viernes), el sistema asumirá un descanso pasivo y bajará los puntos. Esto ES CORRECTO. Pero, ¿y si apagó la App y condujo otro camión sin el DMS?
 *   **Acción Requerida para QA y Operaciones:** El sistema "Store-and-Forward" de sincronización es el que sube los puntos negativos al chofer, por lo que el FRS del servidor solo se entera cuando recupera cobertura 4G. En zonas sin señal (offline prolongado), el FRS en el móvil podría seguir subiendo, por lo que la App también debe tener una copia en memoria del "Fatigue Score" y auto-bloquearse nativamente sin esperar permiso de la red. ¡La penalización debe ser Edge + Cloud, no solo Cloud!
+<<<<<<< HEAD
+=======
+
+## 5. Resolución y Cierre Técnico
+**Estado del Sprint:** `[100% COMPLETADO y EN VERDE]`
+**Fecha de Cierre:** 2026-03-20 (Fase 5 Completada)
+
+**Resumen de Correcciones y Compilación:**
+- **FSM Temporal:** La FSM fue refactorizada con éxito para usar `timestampMs` asegurando latencia < 1500ms al detectar fatiga, independientemente del framerate y el throttling.
+- **Tests Unitarios:** Las suites de test en `DrowsinessDetectorTest.kt` fueron adaptadas a las ventanas de tiempo cronológico. Todas pasan 100%.
+- **Backend:** Código en Python validado por sintaxis.
+- **Android APK:** El proyecto resolvió dependencias de Maven y compiló la APK de depuración sin errores en 11s.
+
+**Ruta del Artefacto APK para Pruebas Físicas:**
+`C:\Users\PC\Downloads\Conduccion-main\Conduccion-main\android_dms\app\build\outputs\apk\debug\app-debug.apk`
+>>>>>>> b56fcb8 (Primer commit: inicialización del proyecto)

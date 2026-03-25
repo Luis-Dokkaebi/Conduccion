@@ -275,3 +275,25 @@ async def check_driver_clearance(driver_id: str):
     scorer = FatigueRiskScorer()
     return scorer.calculate_current_frs(get_database_connection(), driver_id)
 ```
+<<<<<<< HEAD
+=======
+
+---
+
+## 6. Reportes en PDF y Notificaciones (S3)
+
+Generación de reporte diario de incidentes por hora al finalizar turno. Se incluye lógica que simula la subida de los archivos PDF al bucket `dms-fleet-reports` de S3, clasificando como `PRIORITY_REVIEW` aquellos reportes de los conductores que superaron el umbral ROJO del Fatigue Risk Score (FRS).
+
+```python
+# src/pdf_report.py
+def upload_to_s3_mock(filepath: str, driver_id: str, is_priority: bool):
+    bucket_name = "dms-fleet-reports"
+    s3_key = f"reports/{driver_id}/{os.path.basename(filepath)}"
+    
+    print(f"[S3 UPLOAD MOCK] Uploading {filepath} to s3://{bucket_name}/{s3_key}")
+    if is_priority:
+        print(f"[S3 UPLOAD MOCK] Tagging object as PRIORITY_REVIEW")
+        
+    print("[S3 UPLOAD MOCK] Upload completed successfully.")
+```
+>>>>>>> b56fcb8 (Primer commit: inicialización del proyecto)

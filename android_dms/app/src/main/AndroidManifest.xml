@@ -22,7 +22,11 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+<<<<<<< HEAD
                 <category android:name="android.intent.action.LAUNCHER" />
+=======
+                <category android:name="android.intent.category.LAUNCHER" />
+>>>>>>> b56fcb8 (Primer commit: inicialización del proyecto)
             </intent-filter>
         </activity>
 
