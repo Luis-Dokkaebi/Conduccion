@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DMS</string>
+    <string name="hms_status_active">MONITOREO ACTIVO</string>
+    <string name="hms_status_warning">ATENCIÓN REQUERIDA</string>
+    <string name="hms_status_critical">¡ALERTA DE SUEÑO!</string>
+    <string name="hms_shift_summary">Resumen del Turno</string>
 </resources>

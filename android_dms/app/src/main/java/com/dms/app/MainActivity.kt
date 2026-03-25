@@ -21,7 +21,6 @@ import androidx.core.content.ContextCompat
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import com.google.mediapipe.framework.image.BitmapImageBuilder
-import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker
@@ -40,31 +39,47 @@ import java.util.concurrent.TimeUnit
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import android.graphics.Color
+import android.widget.ImageView
+import android.widget.TextView
+import android.widget.LinearLayout
+import com.google.android.material.progressindicator.CircularProgressIndicator
+import com.google.android.material.button.MaterialButton
+import android.widget.ImageButton
+
+enum class HmsState { ACTIVE, WARNING, CRITICAL }
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var viewFinder: PreviewView
     private lateinit var redFlashOverlay: android.view.View
     private lateinit var dimmingOverlay: android.view.View
+    private lateinit var backgroundRoot: android.view.View
+    private lateinit var statusRing: CircularProgressIndicator
+    private lateinit var statusIcon: ImageView
+    private lateinit var statusText: TextView
+    private lateinit var bottomControlBar: LinearLayout
+    private lateinit var btnShiftSummary: MaterialButton
+    private lateinit var btnSettings: ImageButton
+    private lateinit var btnNetworkSync: ImageButton
+
     private lateinit var cameraExecutor: ExecutorService
     private var faceLandmarker: FaceLandmarker? = null
 
     private lateinit var alertManager: AlertManager
-
-    // Task 3.1: FSM para detección de somnolencia
     private val drowsinessDetector = DrowsinessDetector()
 
-    // Task 5.1: Prevención de Thermal Throttling
     @Volatile private var isThrottled = false
     private var lastFrameTime = 0L
-    private val THROTTLED_FRAME_INTERVAL_MS = 100L // 10 FPS
-    private var dimmingTemporarilyDisabledUntil = 0L
+    private val THROTTLED_FRAME_INTERVAL_MS = 100L
 
-    // Task 6.1: Almacenamiento Local (Store and Forward)
     private var sleepStartTimeMs: Long = 0L
     private var lastRecordedEar: Float = 0f
 
-    // Task 8.2: Receptor de actualizaciones de clearance
+    private val inactivityHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val blackoutRunnable = Runnable { enterBlackoutMode() }
+    private var pulsingAnimators = mutableListOf<android.animation.ObjectAnimator>()
+
     private val clearanceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == TelemetrySyncWorker.ACTION_CLEARANCE_UPDATE) {
@@ -74,7 +89,6 @@ class MainActivity : AppCompatActivity() {
                 val restMinutes = intent.getIntExtra("mandatory_rest_minutes", 0)
 
                 if (status == "BLOCKED_FATIGUE") {
-                    Log.w(TAG, "Driver blocked due to fatigue. Launching ClearanceActivity.")
                     val clearanceIntent = Intent(this@MainActivity, ClearanceActivity::class.java).apply {
                         putExtra("status", status)
                         putExtra("frs_score", frsScore)
@@ -83,9 +97,8 @@ class MainActivity : AppCompatActivity() {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     }
                     startActivity(clearanceIntent)
-                    finish() // Close main monitoring activity
+                    finish()
                 } else if (status == "WARNING") {
-                    Log.w(TAG, "Driver warning: $message")
                     Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
                 }
             }
@@ -105,17 +118,22 @@ class MainActivity : AppCompatActivity() {
         viewFinder = findViewById(R.id.viewFinder)
         redFlashOverlay = findViewById(R.id.redFlashOverlay)
         dimmingOverlay = findViewById(R.id.dimmingOverlay)
-        cameraExecutor = Executors.newSingleThreadExecutor()
+        backgroundRoot = findViewById(R.id.backgroundRoot)
+        statusRing = findViewById(R.id.statusRing)
+        statusIcon = findViewById(R.id.statusIcon)
+        statusText = findViewById(R.id.statusText)
+        bottomControlBar = findViewById(R.id.bottomControlBar)
+        btnShiftSummary = findViewById(R.id.btnShiftSummary)
+        btnSettings = findViewById(R.id.btnSettings)
+        btnNetworkSync = findViewById(R.id.btnNetworkSync)
 
+        cameraExecutor = Executors.newSingleThreadExecutor()
         alertManager = AlertManager(this)
 
         setupFaceLandmarker()
-
-        setupDimmingTouchListener()
-
+        setupListeners()
         setupTelemetrySyncWorker()
 
-        // Solicitar permisos de cámara
         if (allPermissionsGranted()) {
             startCamera()
         } else {
@@ -123,23 +141,124 @@ class MainActivity : AppCompatActivity() {
                 this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS
             )
         }
+        
+        resetBlackoutTimer()
+    }
+
+    private fun setupListeners() {
+        btnShiftSummary.setOnClickListener {
+            exitBlackoutMode(immediate = false)
+            ShiftSummaryBottomSheet().show(supportFragmentManager, "ShiftSummary")
+        }
+
+        val touchListener = View.OnTouchListener { _, _ ->
+            exitBlackoutMode(immediate = false)
+            false
+        }
+        
+        dimmingOverlay.setOnTouchListener(touchListener)
+        backgroundRoot.setOnTouchListener(touchListener)
+        viewFinder.setOnTouchListener(touchListener)
+    }
+
+    private fun resetBlackoutTimer() {
+        inactivityHandler.removeCallbacks(blackoutRunnable)
+        inactivityHandler.postDelayed(blackoutRunnable, 45000L)
+    }
+
+    private fun enterBlackoutMode() {
+        dimmingOverlay.animate().alpha(0.9f).setDuration(500).start()
+        bottomControlBar.animate().alpha(0.0f).setDuration(500).withEndAction {
+            bottomControlBar.visibility = View.GONE
+        }.start()
+        statusText.animate().alpha(0.0f).setDuration(500).start()
+        statusRing.animate().alpha(0.5f).setDuration(500).start()
+        statusIcon.animate().alpha(0.5f).setDuration(500).start()
+        startPulsingAnimation()
+    }
+
+    private fun exitBlackoutMode(immediate: Boolean) {
+        if (immediate) {
+            dimmingOverlay.alpha = 0.0f
+            bottomControlBar.alpha = 1.0f
+            statusText.alpha = 1.0f
+            statusRing.alpha = 1.0f
+            statusIcon.alpha = 1.0f
+            bottomControlBar.visibility = View.VISIBLE
+        } else {
+            dimmingOverlay.animate().alpha(0.0f).setDuration(300).start()
+            bottomControlBar.visibility = View.VISIBLE
+            bottomControlBar.animate().alpha(1.0f).setDuration(300).start()
+            statusText.animate().alpha(1.0f).setDuration(300).start()
+            statusRing.animate().alpha(1.0f).setDuration(300).start()
+            statusIcon.animate().alpha(1.0f).setDuration(300).start()
+        }
+        stopPulsingAnimation()
+        resetBlackoutTimer()
+    }
+
+    private fun startPulsingAnimation() {
+        if (pulsingAnimators.isEmpty()) {
+            pulsingAnimators.add(android.animation.ObjectAnimator.ofFloat(statusRing, "scaleX", 1f, 1.05f))
+            pulsingAnimators.add(android.animation.ObjectAnimator.ofFloat(statusRing, "scaleY", 1f, 1.05f))
+            pulsingAnimators.add(android.animation.ObjectAnimator.ofFloat(statusIcon, "scaleX", 1f, 1.05f))
+            pulsingAnimators.add(android.animation.ObjectAnimator.ofFloat(statusIcon, "scaleY", 1f, 1.05f))
+            pulsingAnimators.forEach {
+                it.duration = 1000
+                it.repeatCount = android.animation.ValueAnimator.INFINITE
+                it.repeatMode = android.animation.ValueAnimator.REVERSE
+                it.start()
+            }
+        }
+    }
+
+    private fun stopPulsingAnimation() {
+        pulsingAnimators.forEach { it.cancel() }
+        pulsingAnimators.clear()
+        statusRing.scaleX = 1f
+        statusRing.scaleY = 1f
+        statusIcon.scaleX = 1f
+        statusIcon.scaleY = 1f
+    }
+
+    private fun updateUIState(state: HmsState) {
+        runOnUiThread {
+            when(state) {
+                HmsState.ACTIVE -> {
+                    statusRing.setIndicatorColor(getColor(R.color.hms_green))
+                    statusIcon.setColorFilter(getColor(R.color.hms_green))
+                    statusIcon.setImageResource(R.drawable.ic_shield_check)
+                    statusText.text = getString(R.string.hms_status_active)
+                    statusText.setTextColor(Color.WHITE)
+                }
+                HmsState.WARNING -> {
+                    statusRing.setIndicatorColor(getColor(R.color.hms_yellow))
+                    statusIcon.setColorFilter(getColor(R.color.hms_yellow))
+                    statusIcon.setImageResource(R.drawable.ic_warning)
+                    statusText.text = getString(R.string.hms_status_warning)
+                    statusText.setTextColor(getColor(R.color.hms_yellow))
+                }
+                HmsState.CRITICAL -> {
+                    statusRing.setIndicatorColor(getColor(R.color.hms_red))
+                    statusIcon.setColorFilter(getColor(R.color.hms_red))
+                    statusIcon.setImageResource(R.drawable.ic_sleep)
+                    statusText.text = getString(R.string.hms_status_critical)
+                    statusText.setTextColor(getColor(R.color.hms_red))
+                    exitBlackoutMode(immediate = true)
+                }
+            }
+        }
     }
 
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-
         cameraProviderFuture.addListener({
-            // Provider de ciclo de vida para CameraX
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-
-            // Configurar el Preview
             val preview = Preview.Builder()
                 .build()
                 .also {
                     it.setSurfaceProvider(viewFinder.surfaceProvider)
                 }
-
-            // Task 1.1.2: Crear un analizador de imágenes a max 640x480
             val imageAnalyzer = ImageAnalysis.Builder()
                 .setTargetResolution(Size(640, 480))
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -148,24 +267,15 @@ class MainActivity : AppCompatActivity() {
                 .also {
                     it.setAnalyzer(cameraExecutor, DmsImageAnalyzer(faceLandmarker))
                 }
-
-            // Task 1.1.1: Usar cámara frontal
             val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
-
             try {
-                // Desvincular usos previos antes de re-vincular
                 cameraProvider.unbindAll()
-
-                // Vincular cámara al ciclo de vida de la Activity
-                // Task 1.1.3: Manejo automático de rotación ocurre a nivel de CameraX internamente por el PreviewView
                 cameraProvider.bindToLifecycle(
                     this, cameraSelector, preview, imageAnalyzer
                 )
-
             } catch (exc: Exception) {
                 Log.e(TAG, "Use case binding failed", exc)
             }
-
         }, ContextCompat.getMainExecutor(this))
     }
 
@@ -187,21 +297,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Task 5.1.1: Monitor thermal status
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == Intent.ACTION_BATTERY_CHANGED) {
-                val temperature = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) // Given in tenths of a degree Celsius
-
-                // > 40°C triggers throttling
+                val temperature = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)
                 if (temperature >= 400 && !isThrottled) {
-                    Log.w(TAG, "Thermal Throttling Activated! Temp: ${temperature / 10f}°C")
                     isThrottled = true
                     drowsinessDetector.setThrottled(true)
-                }
-                // < 38°C untriggers throttling (hysteresis)
-                else if (temperature <= 380 && isThrottled) {
-                    Log.i(TAG, "Thermal Throttling Deactivated. Temp: ${temperature / 10f}°C")
+                } else if (temperature <= 380 && isThrottled) {
                     isThrottled = false
                     drowsinessDetector.setThrottled(false)
                 }
@@ -229,25 +332,22 @@ class MainActivity : AppCompatActivity() {
         alertManager.stopAlarm(redFlashOverlay)
         cameraExecutor.shutdown()
         faceLandmarker?.close()
-
-        // Task 8.3: Terminar turno e invocar la generación del reporte PDF
         endShiftAndGenerateReport()
+        inactivityHandler.removeCallbacksAndMessages(null)
+        stopPulsingAnimation()
     }
 
     private fun endShiftAndGenerateReport() {
-        Log.i(TAG, "Ending shift and requesting PDF report from backend...")
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val retrofit = Retrofit.Builder()
-                    .baseUrl("http://10.0.2.2:8000") // Same URL as TelemetrySyncWorker
+                    .baseUrl("http://10.0.2.2:8000")
                     .addConverterFactory(GsonConverterFactory.create())
                     .build()
                 val dmsApi = retrofit.create(DmsApi::class.java)
                 val response = dmsApi.endShift("driver_123")
                 if (response.isSuccessful) {
                     Log.i(TAG, "Successfully triggered end_shift API.")
-                } else {
-                    Log.e(TAG, "Failed to trigger end_shift API. Status: ${response.code()}")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Exception calling end_shift API", e)
@@ -255,45 +355,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Task 6.2.2: Crear un servicio de WorkManager que corra cada 15 min
     private fun setupTelemetrySyncWorker() {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-
         val syncWorkRequest = PeriodicWorkRequestBuilder<TelemetrySyncWorker>(
-            15, TimeUnit.MINUTES // Minimum periodic interval is 15 minutes
+            15, TimeUnit.MINUTES
         )
         .setConstraints(constraints)
         .build()
-
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "TelemetrySyncWorker",
             androidx.work.ExistingPeriodicWorkPolicy.KEEP,
             syncWorkRequest
         )
-        Log.i(TAG, "Enqueued unique periodic telemetry sync worker.")
-    }
-
-    // Task 5.1.3: Dimming mode touch logic
-    private fun setupDimmingTouchListener() {
-        dimmingOverlay.setOnClickListener {
-            // Disable dimming for 5 seconds when touched
-            dimmingTemporarilyDisabledUntil = SystemClock.uptimeMillis() + 5000L
-            dimmingOverlay.visibility = View.GONE
-        }
-
-        // Clicks on the normal view also disable dimming for 5s
-        viewFinder.setOnClickListener {
-             dimmingTemporarilyDisabledUntil = SystemClock.uptimeMillis() + 5000L
-        }
     }
 
     private fun setupFaceLandmarker() {
         val baseOptions = BaseOptions.builder()
             .setModelAssetPath("face_landmarker.task")
             .build()
-
         val optionsBuilder = FaceLandmarker.FaceLandmarkerOptions.builder()
             .setBaseOptions(baseOptions)
             .setRunningMode(RunningMode.LIVE_STREAM)
@@ -304,92 +385,59 @@ class MainActivity : AppCompatActivity() {
             .setErrorListener { error ->
                 Log.e(TAG, "Face Landmarker Error: ${error.message}")
             }
-
         faceLandmarker = FaceLandmarker.createFromOptions(this, optionsBuilder.build())
     }
 
     private fun handleFaceLandmarkerResult(result: FaceLandmarkerResult) {
         if (result.faceLandmarks().isNotEmpty()) {
             val landmarks = result.faceLandmarks()[0]
-
-            // Task 2.1.4: Extract critical indices
             val leftEyeIndices = listOf(33, 160, 158, 133, 153, 144)
             val rightEyeIndices = listOf(362, 385, 387, 263, 373, 380)
-            val mouthIndices = listOf(78, 191, 80, 81, 13, 311, 308, 402, 14, 178)
-            val headIndices = listOf(1, 152)
 
-            Log.d(TAG, "Extracted critical landmarks:")
-            Log.d(TAG, "Left Eye: ${leftEyeIndices.map { landmarks[it] }}")
-            Log.d(TAG, "Right Eye: ${rightEyeIndices.map { landmarks[it] }}")
-            Log.d(TAG, "Mouth: ${mouthIndices.map { landmarks[it] }}")
-            Log.d(TAG, "Head: ${headIndices.map { landmarks[it] }}")
-
-            // Task 2.2: Compute math metrics (EAR, MAR, and Head Pose)
             val leftEar = DrowsinessMath.calculateEar(landmarks, leftEyeIndices)
             val rightEar = DrowsinessMath.calculateEar(landmarks, rightEyeIndices)
             val avgEar = (leftEar + rightEar) / 2.0f
 
-            val marMouthIndices = listOf(78, 13, 308, 14) // Left, Top, Right, Bottom
-            val mar = DrowsinessMath.calculateMar(landmarks, marMouthIndices)
-
             val (yaw, pitch) = DrowsinessMath.calculateHeadPose(landmarks)
 
-            Log.d(TAG, "Metrics -> EAR: $avgEar (L: $leftEar, R: $rightEar), MAR: $mar, HeadPose(Yaw,Pitch): ($yaw, $pitch)")
-
-            // Task 3.1: Actualizar máquina de estados de somnolencia con el EAR
             val state = drowsinessDetector.processEar(avgEar, SystemClock.uptimeMillis())
-            Log.d(TAG, "Drowsiness State: $state")
-            if (drowsinessDetector.isCurrentlyCalibrating()) {
-                Log.d(TAG, "Calibrating baseline EAR...")
-            } else {
-                Log.d(TAG, "Baseline EAR: ${drowsinessDetector.getBaselineEar()}")
-            }
+            
+            var hmsState = HmsState.ACTIVE
 
-            // Task 4.1: Interfaz y Alertas Físicas
             when (state) {
                 DrowsinessState.EMERGENCY_SLEEP_DETECTED -> {
+                    hmsState = HmsState.CRITICAL
                     if (sleepStartTimeMs == 0L) {
                         sleepStartTimeMs = SystemClock.uptimeMillis()
                         lastRecordedEar = avgEar
                     }
-
                     alertManager.startAlarm(redFlashOverlay)
-
-                    // Task 5.1.3: Hide dimming overlay if alarm triggered
-                    runOnUiThread { dimmingOverlay.visibility = View.GONE }
                 }
                 DrowsinessState.DRIVER_AWAKE -> {
                     if (sleepStartTimeMs != 0L) {
-                        // Sleep episode just ended, record it
                         val durationSeconds = (SystemClock.uptimeMillis() - sleepStartTimeMs) / 1000f
                         recordMicroSleepEvent(lastRecordedEar, durationSeconds)
                         sleepStartTimeMs = 0L
                     }
                     alertManager.stopAlarm(redFlashOverlay)
                 }
-                else -> { /* Do nothing for normal state */ }
-            }
-
-            // Task 5.1.3: Update dimming overlay visibility based on throttling and touch timeout
-            runOnUiThread {
-                if (state != DrowsinessState.EMERGENCY_SLEEP_DETECTED) {
-                    if (isThrottled && SystemClock.uptimeMillis() > dimmingTemporarilyDisabledUntil) {
-                        dimmingOverlay.visibility = View.VISIBLE
-                    } else {
-                        dimmingOverlay.visibility = View.GONE
+                else -> { 
+                    if (Math.abs(yaw) > 20 || Math.abs(pitch) > 20) {
+                        hmsState = HmsState.WARNING
                     }
                 }
             }
+            
+            updateUIState(hmsState)
         }
     }
 
-    // Task 6.1.2: Grabar en DB local cada vez que se dispare una alerta
     private fun recordMicroSleepEvent(earValue: Float, durationSeconds: Float) {
         val event = MicroSleepEvent(
             timestamp = System.currentTimeMillis(),
             earValue = earValue,
             durationSeconds = durationSeconds,
-            gpsLat = 0.0, // Assuming GPS tracking is not implemented yet
+            gpsLat = 0.0,
             gpsLng = 0.0
         )
         CoroutineScope(Dispatchers.IO).launch {
@@ -404,18 +452,14 @@ class MainActivity : AppCompatActivity() {
                 imageProxy.close()
                 return
             }
-
-            // Task 5.1.2: Drop frames to meet 10 FPS if throttled
             val currentTime = SystemClock.uptimeMillis()
             if (isThrottled) {
                 if (currentTime - lastFrameTime < THROTTLED_FRAME_INTERVAL_MS) {
                     imageProxy.close()
-                    return // Skip frame
+                    return
                 }
             }
             lastFrameTime = currentTime
-
-            // Convert ImageProxy to Bitmap
             val bitmapBuffer = Bitmap.createBitmap(
                 imageProxy.width,
                 imageProxy.height,
@@ -424,21 +468,14 @@ class MainActivity : AppCompatActivity() {
             imageProxy.use { proxy ->
                 bitmapBuffer.copyPixelsFromBuffer(proxy.planes[0].buffer)
             }
-
-            // Rotate Bitmap according to ImageProxy rotation
             val matrix = Matrix().apply {
                 postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
                 postScale(-1f, 1f, imageProxy.width.toFloat() / 2, imageProxy.height.toFloat() / 2)
             }
-
             val rotatedBitmap = Bitmap.createBitmap(
                 bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true
             )
-
-            // Convert to MPImage
             val mpImage = BitmapImageBuilder(rotatedBitmap).build()
-
-            // Run face landmarker
             try {
                 faceLandmarker.detectAsync(mpImage, SystemClock.uptimeMillis())
             } catch (e: Exception) {

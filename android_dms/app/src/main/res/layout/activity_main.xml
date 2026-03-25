@@ -4,20 +4,28 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="#000000"
+    android:id="@+id/backgroundRoot"
     tools:context=".MainActivity">
 
+    <!-- Capa 1: Cámara Atenuada -->
     <androidx.camera.view.PreviewView
         android:id="@+id/viewFinder"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:alpha="0.4"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Task 5.1.3: Dimming mode overlay -->
+    <!-- Capa 2: Velo de Ahorro Térmico -->
     <View
         android:id="@+id/dimmingOverlay"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
         android:background="#000000"
-        android:visibility="gone"
+        android:alpha="0.0"
         android:clickable="true"
         android:focusable="true"
         app:layout_constraintTop_toTopOf="parent"
@@ -25,10 +33,11 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <!-- Capa 3: Estroboscopio de Emergencia -->
     <View
         android:id="@+id/redFlashOverlay"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
         android:background="#FF0000"
         android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
@@ -36,21 +45,90 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-<<<<<<< HEAD
-=======
+    <!-- Capa 4: UI Interactiva Foreground -->
+    <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:id="@+id/statusRing"
+        android:layout_width="200dp"
+        android:layout_height="200dp"
+        app:indicatorSize="180dp"
+        app:trackThickness="16dp"
+        app:indicatorColor="@color/hms_green"
+        app:trackColor="#33FFFFFF"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintVertical_bias="0.4" />
+
+    <ImageView
+        android:id="@+id/statusIcon"
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:src="@drawable/ic_shield_check"
+        app:tint="@color/hms_green"
+        app:layout_constraintTop_toTopOf="@id/statusRing"
+        app:layout_constraintBottom_toBottomOf="@id/statusRing"
+        app:layout_constraintStart_toStartOf="@id/statusRing"
+        app:layout_constraintEnd_toEndOf="@id/statusRing" />
+
     <TextView
-        android:id="@+id/hudTextView"
+        android:id="@+id/statusText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_margin="16dp"
-        android:background="#80000000"
-        android:padding="8dp"
+        android:text="@string/hms_status_active"
+        android:textSize="18sp"
+        android:textStyle="bold"
         android:textColor="#FFFFFF"
-        android:fontFamily="monospace"
-        android:textSize="12sp"
-        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/statusRing"
         app:layout_constraintStart_toStartOf="parent"
-        android:text="EAR: 0.00\nMAR: 0.00\nYAW: 0.00\nPITCH: 0.00" />
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="24dp" />
 
->>>>>>> b56fcb8 (Primer commit: inicialización del proyecto)
+    <LinearLayout
+        android:id="@+id/bottomControlBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:padding="24dp"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <!-- Botón Izquierdo: Estado de Red/Sincronización -->
+        <ImageButton
+            android:id="@+id/btnNetworkSync"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_cloud_sync"
+            app:tint="#88FFFFFF" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!-- Botón Central (Call to Action Primario): Resumen del Turno -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnShiftSummary"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/hms_shift_summary"
+            app:icon="@drawable/ic_analytics" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!-- Botón Derecho: Menú Secundario o Pausa -->
+        <ImageButton
+            android:id="@+id/btnSettings"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_settings"
+            app:tint="#88FFFFFF" />
+    </LinearLayout>
+
 </androidx.constraintlayout.widget.ConstraintLayout>
