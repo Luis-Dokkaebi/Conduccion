@@ -36,4 +36,21 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+<<<<<<< HEAD
+=======
+    <TextView
+        android:id="@+id/hudTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:background="#80000000"
+        android:padding="8dp"
+        android:textColor="#FFFFFF"
+        android:fontFamily="monospace"
+        android:textSize="12sp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        android:text="EAR: 0.00\nMAR: 0.00\nYAW: 0.00\nPITCH: 0.00" />
+
+>>>>>>> b56fcb8 (Primer commit: inicialización del proyecto)
 </androidx.constraintlayout.widget.ConstraintLayout>

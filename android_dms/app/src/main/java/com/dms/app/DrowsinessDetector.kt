@@ -43,6 +43,11 @@ class DrowsinessDetector(
     private val calibrationEarValues = mutableListOf<Float>()
     private var baselineEar: Float? = null
     private var startTimeMs: Long = -1L
+<<<<<<< HEAD
+=======
+    private var sleepStartTimeMs: Long = -1L
+    private var awakeStartTimeMs: Long = -1L
+>>>>>>> b56fcb8 (Primer commit: inicialización del proyecto)
 
     /**
      * Procesa un nuevo valor EAR y devuelve el estado resultante.
@@ -65,7 +70,11 @@ class DrowsinessDetector(
             }
         }
 
+<<<<<<< HEAD
         // Manejo del búfer circular
+=======
+        // Manejo del búfer circular para suavizar la señal
+>>>>>>> b56fcb8 (Primer commit: inicialización del proyecto)
         earBuffer.addLast(ear)
         if (earBuffer.size > bufferSize) {
             earBuffer.removeFirst()
@@ -74,12 +83,32 @@ class DrowsinessDetector(
         val averageEar = if (earBuffer.isNotEmpty()) earBuffer.average().toFloat() else 0f
         var emittedState = DrowsinessState.NORMAL
 
+<<<<<<< HEAD
         if (currentState == DrowsinessState.NORMAL || currentState == DrowsinessState.DRIVER_AWAKE) {
             if (earBuffer.size == bufferSize && averageEar < sleepThreshold) {
                 currentState = DrowsinessState.EMERGENCY_SLEEP_DETECTED
                 emittedState = DrowsinessState.EMERGENCY_SLEEP_DETECTED
                 awakeFramesCount = 0
             } else {
+=======
+        val requiredSleepMs = if (isThrottled) 500L else 1500L
+        val requiredAwakeMs = if (isThrottled) 165L else 500L
+
+        if (currentState == DrowsinessState.NORMAL || currentState == DrowsinessState.DRIVER_AWAKE) {
+            if (averageEar < sleepThreshold) {
+                if (sleepStartTimeMs == -1L) sleepStartTimeMs = timestampMs
+                
+                if ((timestampMs - sleepStartTimeMs) >= requiredSleepMs) {
+                    currentState = DrowsinessState.EMERGENCY_SLEEP_DETECTED
+                    emittedState = DrowsinessState.EMERGENCY_SLEEP_DETECTED
+                    awakeStartTimeMs = -1L
+                } else {
+                    emittedState = DrowsinessState.NORMAL
+                    currentState = DrowsinessState.NORMAL
+                }
+            } else {
+                sleepStartTimeMs = -1L
+>>>>>>> b56fcb8 (Primer commit: inicialización del proyecto)
                 emittedState = DrowsinessState.NORMAL
                 currentState = DrowsinessState.NORMAL
             }
@@ -87,6 +116,7 @@ class DrowsinessDetector(
             emittedState = DrowsinessState.EMERGENCY_SLEEP_DETECTED
 
             if (ear > awakeThreshold) {
+<<<<<<< HEAD
                 awakeFramesCount++
                 if (awakeFramesCount >= awakeFramesRequired) {
                     currentState = DrowsinessState.NORMAL
@@ -94,6 +124,17 @@ class DrowsinessDetector(
                 }
             } else {
                 awakeFramesCount = 0
+=======
+                if (awakeStartTimeMs == -1L) awakeStartTimeMs = timestampMs
+                
+                if ((timestampMs - awakeStartTimeMs) >= requiredAwakeMs) {
+                    currentState = DrowsinessState.NORMAL
+                    emittedState = DrowsinessState.DRIVER_AWAKE
+                    sleepStartTimeMs = -1L
+                }
+            } else {
+                awakeStartTimeMs = -1L
+>>>>>>> b56fcb8 (Primer commit: inicialización del proyecto)
             }
         }
 
